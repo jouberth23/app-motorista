@@ -68,6 +68,9 @@ export default defineConfig({
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2}'],
         navigateFallback: 'index.html',
         navigateFallbackDenylist: [/^\/api\//],
+        // New SW takes control immediately — no waiting for old tabs to close
+        skipWaiting: true,
+        clientsClaim: true,
         runtimeCaching: [
           // Google Fonts — cache first, 1 year
           {
@@ -88,13 +91,24 @@ export default defineConfig({
               cacheableResponse: { statuses: [0, 200] },
             },
           },
-          // Supabase REST API — network first, 5 min cache fallback
+          // Supabase Auth — network first, short timeout so offline fails fast
+          {
+            urlPattern: /^https:\/\/.*\.supabase\.co\/auth\/.*/i,
+            handler: 'NetworkFirst',
+            options: {
+              cacheName: 'supabase-auth',
+              networkTimeoutSeconds: 4,
+              expiration: { maxEntries: 10, maxAgeSeconds: 60 * 5 },
+              cacheableResponse: { statuses: [0, 200] },
+            },
+          },
+          // Supabase REST API — network first, 4s timeout (was 10s)
           {
             urlPattern: /^https:\/\/.*\.supabase\.co\/rest\/.*/i,
             handler: 'NetworkFirst',
             options: {
               cacheName: 'supabase-rest',
-              networkTimeoutSeconds: 10,
+              networkTimeoutSeconds: 4,
               expiration: { maxEntries: 100, maxAgeSeconds: 60 * 5 },
               cacheableResponse: { statuses: [0, 200] },
             },

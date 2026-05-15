@@ -22,13 +22,34 @@ export function useAuth() {
   })
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session?.user) {
-        loadUserData(session.user, session)
-      } else {
+    let initialResolved = false
+
+    // Safety net: if getSession hangs (token refresh on slow/offline network in PWA),
+    // force loading=false after 6s so the app doesn't spin forever
+    const safetyTimer = setTimeout(() => {
+      if (!initialResolved) {
+        initialResolved = true
         setState((s) => ({ ...s, loading: false }))
       }
-    })
+    }, 6000)
+
+    supabase.auth.getSession()
+      .then(({ data: { session } }) => {
+        if (initialResolved) return
+        initialResolved = true
+        clearTimeout(safetyTimer)
+        if (session?.user) {
+          loadUserData(session.user, session)
+        } else {
+          setState((s) => ({ ...s, loading: false }))
+        }
+      })
+      .catch(() => {
+        if (initialResolved) return
+        initialResolved = true
+        clearTimeout(safetyTimer)
+        setState((s) => ({ ...s, loading: false }))
+      })
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       if (session?.user) {
@@ -38,7 +59,10 @@ export function useAuth() {
       }
     })
 
-    return () => subscription.unsubscribe()
+    return () => {
+      clearTimeout(safetyTimer)
+      subscription.unsubscribe()
+    }
   }, [])
 
   async function loadUserData(user: User, session: Session) {
