@@ -1,0 +1,23 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# TypeScript build info
+*.tsbuildinfo
+node_modules/.tmp/
+
+# Editor / OS
+.DS_Store
+Thumbs.db
+.vscode/
+*.log
+
+# Vite
+.vite/
