@@ -8,9 +8,6 @@ interface BeforeInstallPromptEvent extends Event {
   userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>
 }
 
-const DISMISSED_KEY = 'tv_pwa_banner_dismissed'
-const DISMISSED_UNTIL_KEY = 'tv_pwa_banner_dismissed_until'
-
 function isStandalone() {
   return (
     window.matchMedia('(display-mode: standalone)').matches ||
@@ -24,33 +21,22 @@ export function PWAInstallBanner() {
   const [installing, setInstalling] = useState(false)
 
   useEffect(() => {
-    // Don't show if already installed
+    // Não mostrar se já está instalado
     if (isStandalone()) return
-
-    // Don't show if permanently dismissed
-    if (localStorage.getItem(DISMISSED_KEY)) return
-
-    // Don't show if snoozed
-    const until = localStorage.getItem(DISMISSED_UNTIL_KEY)
-    if (until && Date.now() < Number(until)) return
 
     const handler = (e: Event) => {
       e.preventDefault()
       setPrompt(e as BeforeInstallPromptEvent)
-      // Small delay so the page settles before showing the banner
-      setTimeout(() => setVisible(true), 2500)
+      setTimeout(() => setVisible(true), 1500)
     }
 
     window.addEventListener('beforeinstallprompt', handler)
     return () => window.removeEventListener('beforeinstallprompt', handler)
   }, [])
 
-  // Hide banner once installed
+  // Esconde após instalação
   useEffect(() => {
-    const handler = () => {
-      setVisible(false)
-      setPrompt(null)
-    }
+    const handler = () => { setVisible(false); setPrompt(null) }
     window.addEventListener('appinstalled', handler)
     return () => window.removeEventListener('appinstalled', handler)
   }, [])
@@ -60,25 +46,12 @@ export function PWAInstallBanner() {
     setInstalling(true)
     await prompt.prompt()
     const { outcome } = await prompt.userChoice
-    if (outcome === 'accepted') {
-      localStorage.setItem(DISMISSED_KEY, '1')
-    }
-    setVisible(false)
+    if (outcome === 'accepted') setVisible(false)
     setPrompt(null)
     setInstalling(false)
   }
 
-  // Snooze for 3 days
-  const handleSnooze = () => {
-    localStorage.setItem(DISMISSED_UNTIL_KEY, String(Date.now() + 1000 * 60 * 60 * 24 * 3))
-    setVisible(false)
-  }
-
-  // Permanently dismiss
-  const handleDismiss = () => {
-    localStorage.setItem(DISMISSED_KEY, '1')
-    setVisible(false)
-  }
+  const handleClose = () => setVisible(false)
 
   return (
     <AnimatePresence>
@@ -90,15 +63,14 @@ export function PWAInstallBanner() {
           transition={{ type: 'spring', damping: 26, stiffness: 300 }}
           className="fixed bottom-0 left-0 right-0 z-50 p-3 pb-[max(12px,env(safe-area-inset-bottom))] lg:bottom-6 lg:left-auto lg:right-6 lg:max-w-sm"
         >
-          {/* Card */}
           <div className="relative rounded-2xl border border-primary/20 bg-[#0d1426] shadow-2xl shadow-black/60 overflow-hidden">
 
-            {/* Blue top accent */}
+            {/* Accent top */}
             <div className="h-0.5 w-full bg-gradient-to-r from-blue-600 via-blue-400 to-blue-600" />
 
-            {/* Dismiss button */}
+            {/* Close button */}
             <button
-              onClick={handleDismiss}
+              onClick={handleClose}
               className="absolute top-3 right-3 p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-white/5 transition-colors"
               aria-label="Fechar"
             >
@@ -108,18 +80,14 @@ export function PWAInstallBanner() {
             <div className="p-4 pt-3.5">
               {/* Header */}
               <div className="flex items-center gap-3 mb-3 pr-6">
-                {/* App icon */}
-                <div className="flex-shrink-0 w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center shadow-lg shadow-blue-900/40">
+                <div className="flex-shrink-0 w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center shadow-lg shadow-blue-900/40 overflow-hidden">
                   <img
                     src="/icons/icon-192.svg"
                     alt="TaxiVoucher"
                     className="w-10 h-10"
-                    onError={(e) => {
-                      e.currentTarget.style.display = 'none'
-                    }}
+                    onError={(e) => { e.currentTarget.style.display = 'none' }}
                   />
                 </div>
-
                 <div className="min-w-0">
                   <p className="font-display font-semibold text-sm text-foreground leading-tight">
                     Instalar TaxiVoucher
@@ -143,7 +111,7 @@ export function PWAInstallBanner() {
                   variant="ghost"
                   size="sm"
                   className="flex-1 text-muted-foreground hover:text-foreground text-xs h-9"
-                  onClick={handleSnooze}
+                  onClick={handleClose}
                 >
                   Agora não
                 </Button>

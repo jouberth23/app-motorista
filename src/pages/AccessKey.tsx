@@ -114,7 +114,7 @@ export function AccessKeyPage() {
                 id="access-code"
                 value={code}
                 onChange={(e) => { setCode(e.target.value.toUpperCase()); setError('') }}
-                placeholder="Ex: 23424531"
+                placeholder=""
                 autoComplete="off"
                 autoFocus
                 maxLength={16}
