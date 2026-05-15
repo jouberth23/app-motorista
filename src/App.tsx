@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { Toaster } from 'sonner'
 import { PWAUpdatePrompt } from '@/components/common/PWAUpdatePrompt'
+import { PWAInstallBanner } from '@/components/common/PWAInstallBanner'
 import { AuthProvider, useAuthContext } from '@/contexts/AuthContext'
 import { AppShell } from '@/components/layout/AppShell'
 import { AccessKeyPage } from '@/pages/AccessKey'
@@ -223,6 +224,7 @@ export default function App() {
           }}
         />
         <PWAUpdatePrompt />
+        <PWAInstallBanner />
       </AuthProvider>
     </BrowserRouter>
   )
