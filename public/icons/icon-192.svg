@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192" fill="none">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="192" y2="192" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#2563EB"/>
+      <stop offset="100%" stop-color="#1E40AF"/>
+    </linearGradient>
+    <linearGradient id="shine" x1="0" y1="0" x2="0" y2="1" gradientUnits="objectBoundingBox">
+      <stop offset="0%" stop-color="white" stop-opacity="0.15"/>
+      <stop offset="100%" stop-color="white" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="192" height="192" rx="42" fill="url(#bg)"/>
+  <rect width="192" height="96" rx="42" fill="url(#shine)"/>
+
+  <!-- Car body -->
+  <rect x="28" y="98" width="136" height="52" rx="12" fill="white"/>
+
+  <!-- Car cabin -->
+  <path d="M54 98 L62 66 Q68 56 80 56 H112 Q124 56 130 66 L138 98 Z" fill="white"/>
+
+  <!-- Windows -->
+  <path d="M68 94 L74 70 Q77 64 84 64 H108 Q115 64 118 70 L124 94 Z"
+        fill="#1E40AF" fill-opacity="0.55"/>
+
+  <!-- Window divider -->
+  <line x1="96" y1="64" x2="96" y2="94" stroke="white" stroke-width="3" stroke-opacity="0.35"/>
+
+  <!-- Wheel left -->
+  <circle cx="58" cy="150" r="20" fill="#0F172A"/>
+  <circle cx="58" cy="150" r="9" fill="#93C5FD"/>
+  <circle cx="58" cy="150" r="4" fill="#DBEAFE"/>
+
+  <!-- Wheel right -->
+  <circle cx="134" cy="150" r="20" fill="#0F172A"/>
+  <circle cx="134" cy="150" r="9" fill="#93C5FD"/>
+  <circle cx="134" cy="150" r="4" fill="#DBEAFE"/>
+
+  <!-- Door line -->
+  <line x1="96" y1="99" x2="96" y2="148" stroke="#3B82F6" stroke-width="2.5" stroke-opacity="0.3"/>
+
+  <!-- Headlights -->
+  <rect x="150" y="112" width="14" height="9" rx="3" fill="#FCD34D" fill-opacity="0.9"/>
+  <!-- Taillights -->
+  <rect x="28" y="112" width="11" height="9" rx="3" fill="#EF4444" fill-opacity="0.8"/>
+
+  <!-- Taxi stripe -->
+  <rect x="28" y="126" width="136" height="5" fill="#FBBF24" fill-opacity="0.25" rx="2"/>
+</svg>
