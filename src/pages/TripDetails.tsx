@@ -301,8 +301,10 @@ export function TripDetailsPage() {
           prev ? { ...prev, pdf_path: savedPath!, pdf_generated_at: new Date().toISOString() } : prev,
         )
       }
-    } catch {
-      toast.error('Erro ao gerar PDF')
+    } catch (err) {
+      console.error('[PDF] Erro ao gerar:', err)
+      const msg = err instanceof Error ? err.message : String(err)
+      toast.error(`Erro ao gerar PDF: ${msg}`)
     } finally {
       setGeneratingPDF(false)
     }

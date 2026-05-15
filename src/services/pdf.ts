@@ -390,7 +390,7 @@ async function buildPDFDoc(
           doc.text(lines, xPos, metaY)
           metaY += lines.length * 3.8
         }
-        if (photo.latitude !== undefined && photo.longitude !== undefined) {
+        if (photo.latitude != null && photo.longitude != null) {
           doc.text(`GPS: ${photo.latitude.toFixed(6)}, ${photo.longitude.toFixed(6)}`, xPos, metaY)
           if (photo.location_accuracy) {
             metaY += 3.5
@@ -440,8 +440,8 @@ async function buildPDFDoc(
         doc.setTextColor(...C.TEXT_LIGHT)
         if (photo.captured_at) { doc.text(`Capturado: ${formatDateTime(photo.captured_at)}`, MARGIN, y); y += 4 }
         if (photo.address)     { doc.text(`Local: ${photo.address}`, MARGIN, y); y += 4 }
-        if (photo.latitude !== undefined) {
-          doc.text(`GPS: ${photo.latitude.toFixed(6)}, ${photo.longitude?.toFixed(6)}`, MARGIN, y)
+        if (photo.latitude != null && photo.longitude != null) {
+          doc.text(`GPS: ${photo.latitude.toFixed(6)}, ${photo.longitude.toFixed(6)}`, MARGIN, y)
           y += 4
         }
         if (photo.location_denied) {
@@ -579,7 +579,10 @@ export async function generateTripPDF(
   const a    = document.createElement('a')
   a.href     = url
   a.download = `Viagem_${trip.protocolo}.pdf`
+  a.style.display = 'none'
+  document.body.appendChild(a)
   a.click()
+  document.body.removeChild(a)
   URL.revokeObjectURL(url)
   return blob
 }
@@ -613,25 +616,30 @@ export async function saveTripPDF(
 
 async function loadImageAsBase64(url: string, format: 'jpeg' | 'png' = 'jpeg'): Promise<string> {
   return new Promise((resolve, reject) => {
-    const img         = new Image()
-    img.crossOrigin   = 'anonymous'
-    img.onload        = () => {
-      const canvas  = document.createElement('canvas')
-      canvas.width  = img.width
-      canvas.height = img.height
-      const ctx     = canvas.getContext('2d')!
-      if (format === 'png') {
-        ctx.clearRect(0, 0, canvas.width, canvas.height)
-      } else {
-        ctx.fillStyle = '#ffffff'
-        ctx.fillRect(0, 0, canvas.width, canvas.height)
+    const img       = new Image()
+    img.crossOrigin = 'anonymous'
+    img.onload = () => {
+      try {
+        const canvas  = document.createElement('canvas')
+        canvas.width  = img.width
+        canvas.height = img.height
+        const ctx     = canvas.getContext('2d')!
+        if (format === 'png') {
+          ctx.clearRect(0, 0, canvas.width, canvas.height)
+        } else {
+          ctx.fillStyle = '#ffffff'
+          ctx.fillRect(0, 0, canvas.width, canvas.height)
+        }
+        ctx.drawImage(img, 0, 0)
+        resolve(
+          format === 'png'
+            ? canvas.toDataURL('image/png')
+            : canvas.toDataURL('image/jpeg', 0.85),
+        )
+      } catch (e) {
+        // Canvas tainted (CORS) or other draw error — reject so caller shows fallback
+        reject(e)
       }
-      ctx.drawImage(img, 0, 0)
-      resolve(
-        format === 'png'
-          ? canvas.toDataURL('image/png')
-          : canvas.toDataURL('image/jpeg', 0.85),
-      )
     }
     img.onerror = reject
     img.src     = url
