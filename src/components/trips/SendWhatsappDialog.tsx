@@ -67,9 +67,10 @@ export function SendWhatsappDialog({ open, onOpenChange, trip }: SendWhatsappDia
       setStep('form')
       return
     }
+    console.log('[WhatsApp] trip pdf_path:', trip?.pdf_path, trip)
     fetchDriver()
     fetchRecentSends()
-  }, [open])
+  }, [open, trip?.pdf_path])
 
   const fetchDriver = async () => {
     if (!trip.driver_id) return
@@ -112,40 +113,33 @@ export function SendWhatsappDialog({ open, onOpenChange, trip }: SendWhatsappDia
     setStep('sending')
     setSending(true)
     try {
-      const { data: sessionData } = await supabase.auth.getSession()
-      const token = sessionData?.session?.access_token
-      if (!token) throw new Error('Sessão expirada')
+      const phone = normalizePhone(manualPhone)
+      if (!phone) throw new Error('Número inválido')
 
-      const res = await supabase.functions.invoke('send-trip-whatsapp', {
+      const { data, error: fnError } = await supabase.functions.invoke('send-trip-whatsapp', {
         body: {
           trip_id: trip.id,
-          manual_recipients: [{
-            phone: manualPhone,
-            name: manualName.trim() || 'Destinatário manual',
-          }],
+          manual_recipients: [{ phone: manualPhone, name: manualName.trim() || 'Destinatário manual' }],
           extra_message: extraMessage.trim() || undefined,
         },
       })
 
-      if (res.error) throw new Error(res.error.message)
+      // fnError only fires when the function is completely unreachable (network/deploy issue)
+      if (fnError) throw new Error('Não foi possível conectar com a Edge Function. Verifique o deploy no Supabase.')
 
-      const result = res.data as { sent: number; failed: number; pending: number; error?: string }
+      const result = data as { sent: number; failed: number; error: string | null }
 
-      if (result.error) throw new Error(result.error)
+      if (result?.error) throw new Error(result.error)
 
-      if (result.sent > 0) {
-        toast.success(`PDF enviado com sucesso para ${formatPhoneDisplay(normalized!)}`)
-      } else if (result.pending > 0) {
-        toast.warning('Envio registrado — Evolution API ainda não configurada. O PDF será enviado após as chaves serem adicionadas.', { duration: 7000 })
-      } else {
-        toast.error('Falha no envio. Verifique o número e tente novamente.')
-      }
-
-      fetchRecentSends()
-      setStep('form')
-      if (result.sent > 0) {
+      if (result?.sent > 0) {
+        toast.success(`PDF enviado com sucesso para ${formatPhoneDisplay(phone)}`)
+        fetchRecentSends()
+        setStep('form')
         setTimeout(() => onOpenChange(false), 800)
+        return
       }
+
+      throw new Error('Não foi possível enviar o PDF pelo WhatsApp. Verifique a instância da Evolution API.')
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Erro ao enviar')
       setStep('form')

@@ -84,6 +84,23 @@ export function RegisterPage() {
     resolver: zodResolver(centralSchema),
   })
 
+  const handleSignupError = (error: { message?: string; code?: string } | null) => {
+    if (!error) return
+    console.error('[Register] Erro no cadastro:', error)
+    const msg = (error.message ?? '').toLowerCase()
+    if (msg.includes('already registered') || msg.includes('user already registered')) {
+      toast.error('Este e-mail já está cadastrado. Tente fazer login.')
+    } else if (msg.includes('database error') || msg.includes('unexpected_failure') || msg.includes('saving new user') || msg.includes('creating new user')) {
+      toast.error('Erro ao criar perfil do usuário. Contate o suporte.')
+    } else if (msg.includes('invalid email')) {
+      toast.error('E-mail inválido.')
+    } else if (msg.includes('password')) {
+      toast.error('Senha muito fraca. Use no mínimo 6 caracteres.')
+    } else {
+      toast.error(error.message ?? 'Erro ao criar conta. Tente novamente.')
+    }
+  }
+
   const handleMotorista = async (data: MotoristaData) => {
     if (!access) return
     setLoading(true)
@@ -93,15 +110,10 @@ export function RegisterPage() {
         telefone: data.telefone,
         base: data.base,
         access_code: access.code,
-      }) as { data: { session: unknown }; error: { message: string } | null }
+      }) as { data: { session: unknown }; error: { message: string; code?: string } | null }
 
       if (result.error) {
-        const msg = result.error.message
-        if (msg.includes('already registered')) {
-          toast.error('Este e-mail já está cadastrado.')
-        } else {
-          toast.error(msg)
-        }
+        handleSignupError(result.error)
         return
       }
 
@@ -111,7 +123,8 @@ export function RegisterPage() {
       if (result.data?.session) {
         setTimeout(() => navigate('/dashboard'), 1500)
       }
-    } catch {
+    } catch (err) {
+      console.error('[Register] Exceção inesperada:', err)
       toast.error('Erro ao criar conta. Tente novamente.')
     } finally {
       setLoading(false)
@@ -127,15 +140,10 @@ export function RegisterPage() {
         telefone: data.telefone,
         cargo: data.cargo,
         access_code: access.code,
-      }) as { data: { session: unknown }; error: { message: string } | null }
+      }) as { data: { session: unknown }; error: { message: string; code?: string } | null }
 
       if (result.error) {
-        const msg = result.error.message
-        if (msg.includes('already registered')) {
-          toast.error('Este e-mail já está cadastrado.')
-        } else {
-          toast.error(msg)
-        }
+        handleSignupError(result.error)
         return
       }
 
@@ -146,7 +154,8 @@ export function RegisterPage() {
         const home = access.role === 'admin' ? '/admin/dashboard' : '/approvals'
         setTimeout(() => navigate(home), 1500)
       }
-    } catch {
+    } catch (err) {
+      console.error('[Register] Exceção inesperada:', err)
       toast.error('Erro ao criar conta. Tente novamente.')
     } finally {
       setLoading(false)
