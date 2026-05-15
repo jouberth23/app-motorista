@@ -7,8 +7,8 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
-      registerType: 'prompt',
-      includeAssets: ['favicon.svg', 'icons/*.svg'],
+      registerType: 'autoUpdate',
+      includeAssets: ['favicon.svg', 'icons/*.svg', 'icons/*.png'],
       manifest: {
         name: 'TaxiVoucher',
         short_name: 'TaxiVoucher',
@@ -22,21 +22,28 @@ export default defineConfig({
         lang: 'pt-BR',
         categories: ['business', 'productivity'],
         icons: [
+          // PNG first — required for Android home screen and most launchers
           {
-            src: '/icons/icon-192.svg',
+            src: '/icons/icon-192.png',
             sizes: '192x192',
-            type: 'image/svg+xml',
+            type: 'image/png',
           },
+          {
+            src: '/icons/icon-512.png',
+            sizes: '512x512',
+            type: 'image/png',
+          },
+          {
+            src: '/icons/icon-maskable.png',
+            sizes: '512x512',
+            type: 'image/png',
+            purpose: 'maskable',
+          },
+          // SVG fallback for browsers that support it
           {
             src: '/icons/icon-512.svg',
-            sizes: '512x512',
+            sizes: 'any',
             type: 'image/svg+xml',
-          },
-          {
-            src: '/icons/icon-maskable.svg',
-            sizes: '512x512',
-            type: 'image/svg+xml',
-            purpose: 'maskable',
           },
         ],
         shortcuts: [
@@ -45,14 +52,14 @@ export default defineConfig({
             short_name: 'Nova Viagem',
             description: 'Registrar uma nova viagem de táxi',
             url: '/trips/new',
-            icons: [{ src: '/icons/icon-192.svg', sizes: '192x192' }],
+            icons: [{ src: '/icons/icon-192.png', sizes: '192x192', type: 'image/png' }],
           },
           {
             name: 'Minhas Viagens',
             short_name: 'Viagens',
             description: 'Ver todas as minhas viagens',
             url: '/trips',
-            icons: [{ src: '/icons/icon-192.svg', sizes: '192x192' }],
+            icons: [{ src: '/icons/icon-192.png', sizes: '192x192', type: 'image/png' }],
           },
         ],
         screenshots: [
@@ -68,9 +75,9 @@ export default defineConfig({
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2}'],
         navigateFallback: 'index.html',
         navigateFallbackDenylist: [/^\/api\//],
-        // New SW takes control immediately — no waiting for old tabs to close
         skipWaiting: true,
         clientsClaim: true,
+        cleanupOutdatedCaches: true,
         runtimeCaching: [
           // Google Fonts — cache first, 1 year
           {
