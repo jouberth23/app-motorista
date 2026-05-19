@@ -260,7 +260,10 @@ export function NewTripPage() {
     // storage_path → stamped (primary display); fallback to original
     const primaryPath = stampedPath ?? originalPath ?? ''
 
-    const { data: inserted, error: photoInsertError } = await supabase
+    // Try full insert with metadata columns (requires add-photo-metadata migration).
+    // Fall back to base columns if migration hasn't been applied yet.
+    let photoId: string | undefined
+    const { data: fullData, error: fullError } = await supabase
       .from('photos')
       .insert({
         trip_id: tripId,
@@ -281,8 +284,24 @@ export function NewTripPage() {
       .select('id')
       .single()
 
-    if (photoInsertError) throw photoInsertError
-    const photoId = inserted?.id
+    if (fullError) {
+      // Metadata columns missing — insert with base columns only
+      const { data: baseData, error: baseError } = await supabase
+        .from('photos')
+        .insert({
+          trip_id: tripId,
+          tipo,
+          storage_path: primaryPath,
+          uploaded_by: user.id,
+          taken_at: photo.capturedAt ?? new Date().toISOString(),
+        })
+        .select('id')
+        .single()
+      if (baseError) throw baseError
+      photoId = baseData?.id
+    } else {
+      photoId = fullData?.id
+    }
     if (photoId) {
       const action = tipo === 'km_inicial'
         ? 'photo_km_initial_uploaded'
