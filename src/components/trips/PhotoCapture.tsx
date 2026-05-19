@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react'
-import { Camera, X, ZoomIn, CheckCircle2, Loader2, MapPin, AlertTriangle } from 'lucide-react'
+import { Camera, FolderOpen, X, ZoomIn, CheckCircle2, Loader2, MapPin, AlertTriangle } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { getCurrentLocation } from '@/lib/geolocation'
 import { stampPhoto } from '@/services/photoStamp'
@@ -44,15 +44,12 @@ export function PhotoCapture({
   error,
   stampMeta,
 }: PhotoCaptureProps) {
-  const fileInputRef = useRef<HTMLInputElement>(null)
+  const cameraInputRef = useRef<HTMLInputElement>(null)
+  const galleryInputRef = useRef<HTMLInputElement>(null)
   const [fullscreen, setFullscreen] = useState(false)
   const [processing, setProcessing] = useState(false)
 
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-    e.target.value = ''
-
+  const processFile = async (file: File) => {
     setProcessing(true)
     const capturedAt = new Date()
 
@@ -70,7 +67,6 @@ export function PhotoCapture({
           icon: <AlertTriangle className="h-4 w-4" />,
         })
       }
-      // Timeout/unavailable: proceed without location silently
     }
 
     try {
@@ -116,8 +112,19 @@ export function PhotoCapture({
     }
   }
 
-  const handleClick = () => {
-    if (!disabled && !processing) fileInputRef.current?.click()
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    e.target.value = ''
+    await processFile(file)
+  }
+
+  const openCamera = () => {
+    if (!disabled && !processing) cameraInputRef.current?.click()
+  }
+
+  const openGallery = () => {
+    if (!disabled && !processing) galleryInputRef.current?.click()
   }
 
   return (
@@ -130,11 +137,22 @@ export function PhotoCapture({
       </div>
       {description && <p className="text-xs text-muted-foreground">{description}</p>}
 
+      {/* Camera input — opens directly to camera on mobile */}
       <input
-        ref={fileInputRef}
+        ref={cameraInputRef}
         type="file"
         accept="image/*"
         capture="environment"
+        className="sr-only"
+        onChange={handleFileChange}
+        disabled={disabled || processing}
+      />
+
+      {/* Gallery input — opens file picker / gallery */}
+      <input
+        ref={galleryInputRef}
+        type="file"
+        accept="image/*"
         className="sr-only"
         onChange={handleFileChange}
         disabled={disabled || processing}
@@ -161,17 +179,29 @@ export function PhotoCapture({
                 type="button"
                 onClick={() => setFullscreen(true)}
                 className="p-2 rounded-lg bg-white/10 hover:bg-white/20 transition-colors"
+                title="Ver foto"
               >
                 <ZoomIn className="h-5 w-5 text-white" />
               </button>
               {!disabled && (
-                <button
-                  type="button"
-                  onClick={handleClick}
-                  className="p-2 rounded-lg bg-white/10 hover:bg-white/20 transition-colors"
-                >
-                  <Camera className="h-5 w-5 text-white" />
-                </button>
+                <>
+                  <button
+                    type="button"
+                    onClick={openCamera}
+                    className="p-2 rounded-lg bg-white/10 hover:bg-white/20 transition-colors"
+                    title="Tirar nova foto"
+                  >
+                    <Camera className="h-5 w-5 text-white" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={openGallery}
+                    className="p-2 rounded-lg bg-white/10 hover:bg-white/20 transition-colors"
+                    title="Escolher da galeria"
+                  >
+                    <FolderOpen className="h-5 w-5 text-white" />
+                  </button>
+                </>
               )}
             </div>
           </div>
@@ -182,26 +212,62 @@ export function PhotoCapture({
           </div>
         </div>
       ) : (
-        <button
-          type="button"
-          onClick={handleClick}
-          disabled={disabled}
+        <div
           className={cn(
-            'w-full h-40 border-2 border-dashed rounded-xl flex flex-col items-center justify-center gap-3 transition-all',
-            error
-              ? 'border-destructive bg-destructive/5'
-              : 'border-border hover:border-primary/50 hover:bg-primary/5',
-            disabled && 'opacity-50 cursor-not-allowed',
+            'w-full border-2 border-dashed rounded-xl overflow-hidden transition-all',
+            error ? 'border-destructive' : 'border-border',
+            disabled && 'opacity-50',
           )}
         >
-          <div className="p-3 rounded-full bg-muted/50">
-            <Camera className="h-6 w-6 text-muted-foreground" />
+          <div className="flex">
+            {/* Tirar foto */}
+            <button
+              type="button"
+              onClick={openCamera}
+              disabled={disabled}
+              className={cn(
+                'flex-1 flex flex-col items-center justify-center gap-2.5 py-8 px-3 transition-all',
+                !disabled && 'hover:bg-primary/5',
+                error ? 'bg-destructive/5' : '',
+              )}
+            >
+              <div className="p-3 rounded-full bg-muted/50">
+                <Camera className="h-6 w-6 text-muted-foreground" />
+              </div>
+              <div className="text-center">
+                <p className="text-sm text-muted-foreground font-medium">Tirar foto</p>
+                <p className="text-[11px] text-muted-foreground/60 leading-tight">Câmera do celular</p>
+              </div>
+            </button>
+
+            {/* Divisor vertical */}
+            <div className="w-px bg-border self-stretch my-6" />
+
+            {/* Escolher arquivo */}
+            <button
+              type="button"
+              onClick={openGallery}
+              disabled={disabled}
+              className={cn(
+                'flex-1 flex flex-col items-center justify-center gap-2.5 py-8 px-3 transition-all',
+                !disabled && 'hover:bg-primary/5',
+                error ? 'bg-destructive/5' : '',
+              )}
+            >
+              <div className="p-3 rounded-full bg-muted/50">
+                <FolderOpen className="h-6 w-6 text-muted-foreground" />
+              </div>
+              <div className="text-center">
+                <p className="text-sm text-muted-foreground font-medium">Escolher arquivo</p>
+                <p className="text-[11px] text-muted-foreground/60 leading-tight">Galeria ou arquivos</p>
+              </div>
+            </button>
           </div>
-          <div className="text-center">
-            <p className="text-sm text-muted-foreground font-medium">Tirar foto</p>
-            <p className="text-xs text-muted-foreground/60">GPS + carimbo aplicados automaticamente</p>
+
+          <div className="border-t border-dashed border-border/50 py-2 px-3 text-center">
+            <p className="text-[10px] text-muted-foreground/50">GPS + carimbo aplicados automaticamente</p>
           </div>
-        </button>
+        </div>
       )}
 
       {error && <p className="text-xs text-destructive">{error}</p>}
