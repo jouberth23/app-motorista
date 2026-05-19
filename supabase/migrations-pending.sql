@@ -30,11 +30,21 @@ END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
 -- ── 2. Políticas INSERT para profiles e user_roles (necessário para cadastro) ─
-CREATE POLICY IF NOT EXISTS "Allow insert profiles"
-  ON public.profiles FOR INSERT WITH CHECK (true);
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies WHERE tablename = 'profiles' AND policyname = 'Allow insert profiles'
+  ) THEN
+    CREATE POLICY "Allow insert profiles" ON public.profiles FOR INSERT WITH CHECK (true);
+  END IF;
+END $$;
 
-CREATE POLICY IF NOT EXISTS "Allow insert user_roles"
-  ON public.user_roles FOR INSERT WITH CHECK (true);
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies WHERE tablename = 'user_roles' AND policyname = 'Allow insert user_roles'
+  ) THEN
+    CREATE POLICY "Allow insert user_roles" ON public.user_roles FOR INSERT WITH CHECK (true);
+  END IF;
+END $$;
 
 -- ── 3. Coluna cargo em profiles + tabela access_codes ─────────────────────────
 ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS cargo text;
