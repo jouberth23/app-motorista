@@ -200,7 +200,7 @@ export function TripDetailsPage() {
       shouldAutoGenPDF.current = false
       handleGeneratePDF(trip)
     }
-  }, [loading, trip?.status])
+  }, [loading, trip?.id, trip?.status])
 
   const handleApprove = async () => {
     const valor = parseFloat(valorTotal)

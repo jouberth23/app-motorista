@@ -98,9 +98,7 @@ export function DashboardPage() {
   const { trips, loading } = useTrips(isMotorista ? undefined : undefined)
 
   const stats = useMemo(() => {
-    const myTrips = isMotorista
-      ? trips
-      : trips
+    const myTrips = trips
 
     return {
       total: myTrips.length,
@@ -114,7 +112,7 @@ export function DashboardPage() {
         .filter((t) => t.valor_total)
         .reduce((s, t) => s + (t.valor_total ?? 0), 0),
     }
-  }, [trips, isMotorista])
+  }, [trips])
 
   const recentTrips = useMemo(() => trips.slice(0, 5), [trips])
   const pendingApprovals = useMemo(
@@ -135,7 +133,7 @@ export function DashboardPage() {
     <div className="space-y-6">
       {/* Header */}
       <PageHeader
-        title={`${greeting}, ${profile?.nome?.split(' ')[0] ?? 'Usuário'}`}
+        title={`${greeting}, ${profile?.nome?.trim().split(' ')[0] || 'Usuário'}`}
         description="Aqui está um resumo das suas atividades"
         action={
           isMotorista ? (

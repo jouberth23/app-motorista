@@ -30,6 +30,10 @@ export function ProfilePage() {
 
   const handleSave = async () => {
     if (!user) return
+    if (!nome.trim()) {
+      toast.error('Nome é obrigatório')
+      return
+    }
     setSaving(true)
     try {
       const { error } = await supabase

@@ -67,7 +67,6 @@ export function SendWhatsappDialog({ open, onOpenChange, trip }: SendWhatsappDia
       setStep('form')
       return
     }
-    console.log('[WhatsApp] trip pdf_path:', trip?.pdf_path, trip)
     fetchDriver()
     fetchRecentSends()
   }, [open, trip?.pdf_path])

@@ -51,7 +51,19 @@ export function useAuth() {
         setState((s) => ({ ...s, loading: false }))
       })
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      // INITIAL_SESSION races with getSession() — whichever resolves first wins via initialResolved
+      if (event === 'INITIAL_SESSION') {
+        if (initialResolved) return
+        initialResolved = true
+        clearTimeout(safetyTimer)
+        if (session?.user) {
+          loadUserData(session.user, session)
+        } else {
+          setState((s) => ({ ...s, loading: false }))
+        }
+        return
+      }
       if (session?.user) {
         loadUserData(session.user, session)
       } else {

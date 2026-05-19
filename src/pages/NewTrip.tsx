@@ -260,7 +260,7 @@ export function NewTripPage() {
     // storage_path → stamped (primary display); fallback to original
     const primaryPath = stampedPath ?? originalPath ?? ''
 
-    const { data: inserted } = await supabase
+    const { data: inserted, error: photoInsertError } = await supabase
       .from('photos')
       .insert({
         trip_id: tripId,
@@ -281,6 +281,7 @@ export function NewTripPage() {
       .select('id')
       .single()
 
+    if (photoInsertError) throw photoInsertError
     const photoId = inserted?.id
     if (photoId) {
       const action = tipo === 'km_inicial'
@@ -354,13 +355,14 @@ export function NewTripPage() {
       // Insert passengers
       const validPassengers = formData.passengers.filter((p) => p.nome.trim())
       if (validPassengers.length > 0) {
-        await supabase.from('passengers').insert(
+        const { error: passengerError } = await supabase.from('passengers').insert(
           validPassengers.map((p) => ({
             trip_id: tripId,
             nome: p.nome,
             matricula: p.matricula || null,
           })),
         )
+        if (passengerError) throw passengerError
       }
 
       // Upload photos (original + stamped versions with location metadata)
