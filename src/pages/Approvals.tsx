@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import {
   ClipboardCheck, Car, Clock, AlertCircle, CheckCircle2, XCircle,
   ChevronRight, Gauge, AlertTriangle, Loader2, ChevronDown,
-  DollarSign, FileText,
+  DollarSign, FileText, RefreshCw,
 } from 'lucide-react'
 import { PageHeader } from '@/components/common/PageHeader'
 import { StatusBadge } from '@/components/common/StatusBadge'
@@ -341,6 +341,13 @@ function ApprovalCard({ trip }: { trip: Trip }) {
 
 export function ApprovalsPage() {
   const { trips, loading, refetch } = useTrips()
+  const [refreshing, setRefreshing] = useState(false)
+
+  const handleRefresh = async () => {
+    setRefreshing(true)
+    await refetch()
+    setRefreshing(false)
+  }
 
   const grouped = useMemo(
     () => ({
@@ -362,10 +369,22 @@ export function ApprovalsPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        title="Central de Aprovações"
-        description="Revisar e aprovar viagens enviadas pelos motoristas"
-      />
+      <div className="flex items-center justify-between gap-3">
+        <PageHeader
+          title="Central de Aprovações"
+          description="Revisar e aprovar viagens enviadas pelos motoristas"
+        />
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={handleRefresh}
+          disabled={refreshing || loading}
+          className="flex-shrink-0"
+        >
+          <RefreshCw className={cn('h-4 w-4', refreshing && 'animate-spin')} />
+          <span className="hidden sm:inline">Atualizar</span>
+        </Button>
+      </div>
 
       {/* Quick stats */}
       <div className="grid grid-cols-3 gap-3">
