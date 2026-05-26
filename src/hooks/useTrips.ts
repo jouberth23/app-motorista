@@ -194,5 +194,61 @@ export function useTripActions() {
     toast.success('Correção solicitada ao motorista.')
   }
 
-  return { submitTrip, approveTrip, rejectTrip, requestCorrection }
+  const updateAndResubmitTrip = async (
+    tripId: string,
+    updates: {
+      data?: string
+      placa?: string
+      base?: string
+      tipo_viagem?: string
+      hora_inicial?: string
+      hora_final?: string
+      hora_parada?: string | null
+      km_inicial?: number
+      km_final?: number
+      total_km?: number
+      inicio_base?: string
+      final_base?: string
+      embarque_empregado?: string
+      desembarque_empregado?: string
+      descricao_viagem?: string
+      justificativa?: string
+      setor?: string
+    },
+    passengers: { nome: string; matricula?: string }[],
+    submittedBy: string,
+  ) => {
+    const { error } = await supabase
+      .from('trips')
+      .update({ ...updates, status: 'enviado', sent_at: new Date().toISOString() })
+      .eq('id', tripId)
+
+    if (error) {
+      toast.error('Erro ao salvar correção')
+      throw error
+    }
+
+    await supabase.from('passengers').delete().eq('trip_id', tripId)
+    if (passengers.length > 0) {
+      await supabase.from('passengers').insert(
+        passengers.map((p) => ({
+          trip_id: tripId,
+          nome: p.nome,
+          matricula: p.matricula || null,
+        })),
+      )
+    }
+
+    await logAudit({
+      entity: 'trips',
+      entity_id: tripId,
+      action: 'CORRECAO_ENVIADA',
+      by_user: submittedBy,
+      diff: updates as Record<string, unknown>,
+    })
+
+    toast.success('Correção enviada para a central!')
+  }
+
+  return { submitTrip, approveTrip, rejectTrip, requestCorrection, updateAndResubmitTrip }
 }

@@ -5,7 +5,7 @@ import {
   ArrowLeft, Car, Clock, MapPin, User, Camera, PenLine, Lock,
   CheckCircle2, XCircle, AlertTriangle, FileText, DollarSign,
   Loader2, Download, Send, FileCheck2, History,
-  FilePlus2, Pencil, MessageCircle,
+  FilePlus2, Pencil, MessageCircle, Plus, Trash2,
 } from 'lucide-react'
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
@@ -14,6 +14,9 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from '@/components/ui/select'
 import { StatusBadge } from '@/components/common/StatusBadge'
 import { ConfirmDialog } from '@/components/common/ConfirmDialog'
 import { useAuthContext } from '@/contexts/AuthContext'
@@ -24,6 +27,8 @@ import { supabase } from '@/lib/supabase'
 import { formatDate, formatTime, formatCurrency, formatDateTime } from '@/lib/utils'
 import { cn } from '@/lib/utils'
 import type { Trip, AuditLog } from '@/types/trip'
+import type { TripType } from '@/types/enums'
+import { SETORES, BASES } from '@/types/enums'
 import { TRIP_TYPE_LABELS } from '@/lib/constants'
 import { generateTripPDF, saveTripPDF } from '@/services/pdf'
 import { SendWhatsappDialog } from '@/components/trips/SendWhatsappDialog'
@@ -36,10 +41,53 @@ const ACTION_LABELS: Record<string, string> = {
   APPROVE: 'Aprovado',
   REJECT: 'Recusado',
   CORRECAO_SOLICITADA: 'Correção solicitada',
+  CORRECAO_ENVIADA: 'Correção enviada',
   PDF_GERADO: 'PDF gerado',
   WHATSAPP_SENT: 'PDF enviado por WhatsApp',
   INSERT: 'Criado',
   UPDATE: 'Atualizado',
+}
+
+interface EditFormState {
+  data: string
+  placa: string
+  base: string
+  tipo_viagem: string
+  hora_inicial: string
+  hora_final: string
+  hora_parada: string
+  km_inicial: string
+  km_final: string
+  inicio_base: string
+  final_base: string
+  embarque_empregado: string
+  desembarque_empregado: string
+  descricao_viagem: string
+  justificativa: string
+  setor: string
+  passengers: { nome: string; matricula: string }[]
+}
+
+function initEditForm(trip: Trip): EditFormState {
+  return {
+    data: trip.data,
+    placa: trip.placa,
+    base: trip.base,
+    tipo_viagem: trip.tipo_viagem,
+    hora_inicial: trip.hora_inicial,
+    hora_final: trip.hora_final,
+    hora_parada: trip.hora_parada ?? '',
+    km_inicial: trip.km_inicial?.toString() ?? '',
+    km_final: trip.km_final?.toString() ?? '',
+    inicio_base: trip.inicio_base,
+    final_base: trip.final_base,
+    embarque_empregado: trip.embarque_empregado,
+    desembarque_empregado: trip.desembarque_empregado,
+    descricao_viagem: trip.descricao_viagem,
+    justificativa: trip.justificativa,
+    setor: trip.setor,
+    passengers: trip.passengers?.map((p) => ({ nome: p.nome, matricula: p.matricula ?? '' })) ?? [],
+  }
 }
 
 interface TimelineEvent {
@@ -109,7 +157,7 @@ export function TripDetailsPage() {
   const { state: navState } = useLocation()
   const { user, role } = useAuthContext()
   const { isMotorista, isCentral } = useRole(role)
-  const { approveTrip, rejectTrip, requestCorrection, submitTrip } = useTripActions()
+  const { approveTrip, rejectTrip, requestCorrection, submitTrip, updateAndResubmitTrip } = useTripActions()
 
   const [trip, setTrip] = useState<Trip | null>(null)
   const [loading, setLoading] = useState(true)
@@ -128,6 +176,9 @@ export function TripDetailsPage() {
   const [photoUrls, setPhotoUrls] = useState<Record<string, string>>({})
   const [sigUrls, setSigUrls] = useState<Record<string, string>>({})
   const [showWhatsappDialog, setShowWhatsappDialog] = useState(false)
+  const [showEditDialog, setShowEditDialog] = useState(false)
+  const [editForm, setEditForm] = useState<EditFormState | null>(null)
+  const [saving, setSaving] = useState(false)
 
   // Auto-generate PDF when approved (either from this page's action or from navigation state)
   const shouldAutoGenPDF = useRef(!!navState?.autoGeneratePDF)
@@ -259,10 +310,58 @@ export function TripDetailsPage() {
     setResubmitting(true)
     try {
       await submitTrip(trip!.id, user!.id)
+      setShowEditDialog(false)
       fetchTrip()
       fetchAuditLogs()
     } finally {
       setResubmitting(false)
+    }
+  }
+
+  const handleSaveAndResubmit = async () => {
+    if (!editForm) return
+    const kmI = parseFloat(editForm.km_inicial)
+    const kmF = parseFloat(editForm.km_final)
+    if (!editForm.placa.trim()) { toast.error('Informe a placa'); return }
+    if (!editForm.data) { toast.error('Informe a data'); return }
+    if (isNaN(kmI) || isNaN(kmF)) { toast.error('KMs inválidos'); return }
+    if (kmF < kmI) { toast.error('KM final deve ser maior ou igual ao inicial'); return }
+    if (editForm.passengers.some((p) => !p.nome.trim())) {
+      toast.error('Preencha o nome de todos os passageiros')
+      return
+    }
+
+    setSaving(true)
+    try {
+      await updateAndResubmitTrip(
+        trip!.id,
+        {
+          data: editForm.data,
+          placa: editForm.placa.trim().toUpperCase(),
+          base: editForm.base,
+          tipo_viagem: editForm.tipo_viagem as TripType,
+          hora_inicial: editForm.hora_inicial,
+          hora_final: editForm.hora_final,
+          hora_parada: editForm.hora_parada || null,
+          km_inicial: kmI,
+          km_final: kmF,
+          total_km: kmF - kmI,
+          inicio_base: editForm.inicio_base,
+          final_base: editForm.final_base,
+          embarque_empregado: editForm.embarque_empregado,
+          desembarque_empregado: editForm.desembarque_empregado,
+          descricao_viagem: editForm.descricao_viagem,
+          justificativa: editForm.justificativa,
+          setor: editForm.setor,
+        },
+        editForm.passengers.filter((p) => p.nome.trim()),
+        user!.id,
+      )
+      setShowEditDialog(false)
+      fetchTrip()
+      fetchAuditLogs()
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -411,14 +510,11 @@ export function TripDetailsPage() {
           {canResubmit && (
             <Button
               size="sm"
-              onClick={handleResubmit}
-              disabled={resubmitting}
-              className="flex-shrink-0"
+              onClick={() => { setEditForm(initEditForm(trip)); setShowEditDialog(true) }}
+              className="flex-shrink-0 bg-orange-500 hover:bg-orange-600 text-white"
             >
-              {resubmitting
-                ? <Loader2 className="h-4 w-4 animate-spin" />
-                : <Send className="h-4 w-4" />}
-              Reenviar
+              <Pencil className="h-4 w-4" />
+              Corrigir e Reenviar
             </Button>
           )}
         </div>
@@ -684,6 +780,232 @@ export function TripDetailsPage() {
         />
       )}
 
+      {/* Edit & resubmit dialog — motorista corrects trip */}
+      {editForm && (
+        <Dialog open={showEditDialog} onOpenChange={(v) => { if (!saving && !resubmitting) setShowEditDialog(v) }}>
+          <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col p-0">
+            <DialogHeader className="px-6 pt-6 pb-4 border-b border-border flex-shrink-0">
+              <DialogTitle className="font-display">Corrigir Viagem · {trip.protocolo}</DialogTitle>
+              <DialogDescription>
+                Edite os campos necessários e reenvie para a central aprovar.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="overflow-y-auto flex-1 px-6 py-4 space-y-6">
+              {/* Correction reminder */}
+              {trip.motivo_correcao && (
+                <div className="p-3 rounded-lg bg-orange-500/10 border border-orange-500/20 flex gap-2 text-sm">
+                  <AlertTriangle className="h-4 w-4 text-orange-400 flex-shrink-0 mt-0.5" />
+                  <div>
+                    <span className="font-medium text-orange-400">O que corrigir: </span>
+                    <span className="text-muted-foreground">{trip.motivo_correcao}</span>
+                  </div>
+                </div>
+              )}
+
+              {/* Dados Básicos */}
+              <div className="space-y-3">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Dados Básicos</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Data</Label>
+                    <Input
+                      type="date"
+                      value={editForm.data}
+                      onChange={(e) => setEditForm((f) => f ? { ...f, data: e.target.value } : f)}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Placa</Label>
+                    <Input
+                      value={editForm.placa}
+                      onChange={(e) => setEditForm((f) => f ? { ...f, placa: e.target.value.toUpperCase() } : f)}
+                      placeholder="ABC-1234"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Base</Label>
+                    <Select value={editForm.base} onValueChange={(v) => setEditForm((f) => f ? { ...f, base: v } : f)}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {BASES.map((b) => <SelectItem key={b} value={b}>{b}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Tipo de Viagem</Label>
+                    <Select value={editForm.tipo_viagem} onValueChange={(v) => setEditForm((f) => f ? { ...f, tipo_viagem: v } : f)}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="municipal">Municipal</SelectItem>
+                        <SelectItem value="intermunicipal">Intermunicipal</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="col-span-2 space-y-1.5">
+                    <Label className="text-xs">Setor</Label>
+                    <Select value={editForm.setor} onValueChange={(v) => setEditForm((f) => f ? { ...f, setor: v } : f)}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {SETORES.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              </div>
+
+              {/* Horários & KM */}
+              <div className="space-y-3">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Horários & Quilometragem</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Hora Inicial</Label>
+                    <Input type="time" value={editForm.hora_inicial} onChange={(e) => setEditForm((f) => f ? { ...f, hora_inicial: e.target.value } : f)} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Hora Final</Label>
+                    <Input type="time" value={editForm.hora_final} onChange={(e) => setEditForm((f) => f ? { ...f, hora_final: e.target.value } : f)} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Hora Parada (opcional)</Label>
+                    <Input type="time" value={editForm.hora_parada} onChange={(e) => setEditForm((f) => f ? { ...f, hora_parada: e.target.value } : f)} />
+                  </div>
+                  <div />
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">KM Inicial</Label>
+                    <Input type="number" min="0" value={editForm.km_inicial} onChange={(e) => setEditForm((f) => f ? { ...f, km_inicial: e.target.value } : f)} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">KM Final</Label>
+                    <Input type="number" min="0" value={editForm.km_final} onChange={(e) => setEditForm((f) => f ? { ...f, km_final: e.target.value } : f)} />
+                  </div>
+                </div>
+                {editForm.km_inicial && editForm.km_final && parseFloat(editForm.km_final) >= parseFloat(editForm.km_inicial) && (
+                  <p className="text-xs text-primary font-medium">
+                    Total: {parseFloat(editForm.km_final) - parseFloat(editForm.km_inicial)} km
+                  </p>
+                )}
+              </div>
+
+              {/* Locais */}
+              <div className="space-y-3">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Locais da Viagem</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Início da Base</Label>
+                    <Input value={editForm.inicio_base} onChange={(e) => setEditForm((f) => f ? { ...f, inicio_base: e.target.value } : f)} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Final da Base</Label>
+                    <Input value={editForm.final_base} onChange={(e) => setEditForm((f) => f ? { ...f, final_base: e.target.value } : f)} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Embarque do Empregado</Label>
+                    <Input value={editForm.embarque_empregado} onChange={(e) => setEditForm((f) => f ? { ...f, embarque_empregado: e.target.value } : f)} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Desembarque do Empregado</Label>
+                    <Input value={editForm.desembarque_empregado} onChange={(e) => setEditForm((f) => f ? { ...f, desembarque_empregado: e.target.value } : f)} />
+                  </div>
+                  <div className="col-span-2 space-y-1.5">
+                    <Label className="text-xs">Descrição da Viagem</Label>
+                    <Textarea
+                      rows={2}
+                      className="resize-none"
+                      value={editForm.descricao_viagem}
+                      onChange={(e) => setEditForm((f) => f ? { ...f, descricao_viagem: e.target.value } : f)}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Justificativa */}
+              <div className="space-y-3">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Justificativa</p>
+                <Textarea
+                  rows={3}
+                  className="resize-none"
+                  value={editForm.justificativa}
+                  onChange={(e) => setEditForm((f) => f ? { ...f, justificativa: e.target.value } : f)}
+                />
+              </div>
+
+              {/* Passageiros */}
+              <div className="space-y-3">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Passageiros</p>
+                <div className="space-y-2">
+                  {editForm.passengers.map((p, i) => (
+                    <div key={i} className="flex gap-2 items-center">
+                      <Input
+                        placeholder="Nome do passageiro"
+                        value={p.nome}
+                        onChange={(e) => setEditForm((f) => {
+                          if (!f) return f
+                          const passengers = [...f.passengers]
+                          passengers[i] = { ...passengers[i], nome: e.target.value }
+                          return { ...f, passengers }
+                        })}
+                        className="flex-1"
+                      />
+                      <Input
+                        placeholder="Matrícula"
+                        value={p.matricula}
+                        onChange={(e) => setEditForm((f) => {
+                          if (!f) return f
+                          const passengers = [...f.passengers]
+                          passengers[i] = { ...passengers[i], matricula: e.target.value }
+                          return { ...f, passengers }
+                        })}
+                        className="w-28"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setEditForm((f) => f ? { ...f, passengers: f.passengers.filter((_, idx) => idx !== i) } : f)}
+                        className="p-1.5 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
+                  ))}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setEditForm((f) => f ? { ...f, passengers: [...f.passengers, { nome: '', matricula: '' }] } : f)}
+                  >
+                    <Plus className="h-4 w-4" />
+                    Adicionar Passageiro
+                  </Button>
+                </div>
+              </div>
+            </div>
+
+            <DialogFooter className="px-6 py-4 border-t border-border flex-shrink-0 flex-wrap gap-2">
+              <Button variant="outline" onClick={() => setShowEditDialog(false)} disabled={saving || resubmitting}>
+                Cancelar
+              </Button>
+              <Button
+                variant="ghost"
+                onClick={handleResubmit}
+                disabled={saving || resubmitting}
+                className="text-muted-foreground"
+              >
+                {resubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                Reenviar sem alterações
+              </Button>
+              <Button
+                onClick={handleSaveAndResubmit}
+                disabled={saving || resubmitting}
+                className="bg-orange-500 hover:bg-orange-600 text-white"
+              >
+                {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                Salvar e Reenviar
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
+
       {/* Correction dialog */}
       <Dialog open={showCorrectionDialog} onOpenChange={(v) => { setShowCorrectionDialog(v); if (!v) setMotivoCorrecao('') }}>
         <DialogContent className="max-w-md">
@@ -733,6 +1055,7 @@ const TIMELINE_ICONS: Record<string, React.ElementType> = {
   'Aprovado': CheckCircle2,
   'Recusado': XCircle,
   'Correção solicitada': AlertTriangle,
+  'Correção enviada': Send,
   'PDF gerado': FileCheck2,
   'PDF enviado por WhatsApp': MessageCircle,
 }
@@ -742,6 +1065,7 @@ const TIMELINE_COLORS: Record<string, string> = {
   'Aprovado': 'bg-emerald-500/15 text-emerald-400',
   'Recusado': 'bg-red-500/15 text-red-400',
   'Correção solicitada': 'bg-orange-500/15 text-orange-400',
+  'Correção enviada': 'bg-blue-500/15 text-blue-400',
   'PDF gerado': 'bg-purple-500/15 text-purple-400',
   'PDF enviado por WhatsApp': 'bg-emerald-500/15 text-emerald-400',
 }
