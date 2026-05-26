@@ -75,8 +75,6 @@ export default defineConfig({
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2}'],
         navigateFallback: 'index.html',
         navigateFallbackDenylist: [/^\/api\//],
-        skipWaiting: true,
-        clientsClaim: true,
         cleanupOutdatedCaches: true,
         runtimeCaching: [
           // Google Fonts — cache first, 1 year
