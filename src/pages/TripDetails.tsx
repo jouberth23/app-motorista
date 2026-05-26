@@ -66,6 +66,7 @@ interface EditFormState {
   justificativa: string
   setor: string
   passengers: { nome: string; matricula: string }[]
+  photoFiles: Record<string, { file: File; previewUrl: string } | null>
 }
 
 function initEditForm(trip: Trip): EditFormState {
@@ -87,6 +88,7 @@ function initEditForm(trip: Trip): EditFormState {
     justificativa: trip.justificativa,
     setor: trip.setor,
     passengers: trip.passengers?.map((p) => ({ nome: p.nome, matricula: p.matricula ?? '' })) ?? [],
+    photoFiles: {},
   }
 }
 
@@ -333,6 +335,20 @@ export function TripDetailsPage() {
 
     setSaving(true)
     try {
+      // Upload replacement photos while trip is still in 'correcao' (required by RLS)
+      for (const [photoId, replacement] of Object.entries(editForm.photoFiles)) {
+        if (!replacement) continue
+        const photo = trip!.photos?.find((p) => p.id === photoId)
+        if (!photo) continue
+        const ext = replacement.file.name.split('.').pop() ?? 'jpg'
+        const path = `${trip!.id}/${photo.tipo}-${Date.now()}.${ext}`
+        const { error: uploadError } = await supabase.storage
+          .from('trip-photos')
+          .upload(path, replacement.file, { upsert: true })
+        if (uploadError) { toast.error('Erro ao enviar foto'); throw uploadError }
+        await supabase.from('photos').update({ storage_path: path }).eq('id', photoId)
+      }
+
       await updateAndResubmitTrip(
         trip!.id,
         {
@@ -358,6 +374,7 @@ export function TripDetailsPage() {
         user!.id,
       )
       setShowEditDialog(false)
+      Object.values(editForm.photoFiles).forEach((pf) => { if (pf) URL.revokeObjectURL(pf.previewUrl) })
       fetchTrip()
       fetchAuditLogs()
     } finally {
@@ -782,7 +799,12 @@ export function TripDetailsPage() {
 
       {/* Edit & resubmit dialog — motorista corrects trip */}
       {editForm && (
-        <Dialog open={showEditDialog} onOpenChange={(v) => { if (!saving && !resubmitting) setShowEditDialog(v) }}>
+        <Dialog open={showEditDialog} onOpenChange={(v) => {
+          if (!saving && !resubmitting) {
+            if (!v && editForm) Object.values(editForm.photoFiles).forEach((pf) => { if (pf) URL.revokeObjectURL(pf.previewUrl) })
+            setShowEditDialog(v)
+          }
+        }}>
           <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col p-0">
             <DialogHeader className="px-6 pt-6 pb-4 border-b border-border flex-shrink-0">
               <DialogTitle className="font-display">Corrigir Viagem · {trip.protocolo}</DialogTitle>
@@ -978,6 +1000,59 @@ export function TripDetailsPage() {
                   </Button>
                 </div>
               </div>
+
+              {/* Fotos da Quilometragem */}
+              {trip.photos && trip.photos.length > 0 && (
+                <div className="space-y-3">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Fotos da Quilometragem</p>
+                  <div className="grid grid-cols-2 gap-4">
+                    {trip.photos.map((photo) => {
+                      const replacement = editForm.photoFiles[photo.id]
+                      const displayUrl = replacement ? replacement.previewUrl : photoUrls[photo.id]
+                      return (
+                        <div key={photo.id} className="space-y-2">
+                          <p className="text-xs text-muted-foreground">
+                            {photo.tipo === 'km_inicial' ? 'KM Inicial' : 'KM Final'}
+                          </p>
+                          {displayUrl ? (
+                            <img
+                              src={displayUrl}
+                              alt={photo.tipo}
+                              className="w-full h-32 object-cover rounded-xl border border-border"
+                            />
+                          ) : (
+                            <div className="w-full h-32 rounded-xl bg-muted/30 border border-border flex items-center justify-center">
+                              <Camera className="h-6 w-6 text-muted-foreground" />
+                            </div>
+                          )}
+                          {replacement && (
+                            <p className="text-xs text-orange-400 font-medium">Nova foto selecionada</p>
+                          )}
+                          <label className="flex items-center gap-1.5 text-xs text-primary cursor-pointer hover:opacity-75 transition-opacity">
+                            <Camera className="h-3.5 w-3.5" />
+                            {replacement ? 'Trocar foto' : 'Substituir foto'}
+                            <input
+                              type="file"
+                              accept="image/*"
+                              capture="environment"
+                              className="hidden"
+                              onChange={(e) => {
+                                const file = e.target.files?.[0]
+                                if (!file) return
+                                const previewUrl = URL.createObjectURL(file)
+                                setEditForm((f) => f ? {
+                                  ...f,
+                                  photoFiles: { ...f.photoFiles, [photo.id]: { file, previewUrl } },
+                                } : f)
+                              }}
+                            />
+                          </label>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
 
             <DialogFooter className="px-6 py-4 border-t border-border flex-shrink-0 flex-wrap gap-2">
