@@ -16,7 +16,6 @@ import { ReportsPage } from '@/pages/Reports'
 import { DriversPage } from '@/pages/Drivers'
 import { AuditPage } from '@/pages/Audit'
 import { ProfilePage } from '@/pages/Profile'
-import { SettingsPage } from '@/pages/Settings'
 import { AdminDashboardPage } from '@/pages/admin/AdminDashboard'
 import { AccessCodesPage } from '@/pages/admin/AccessCodes'
 import { Loader2, Lock } from 'lucide-react'
@@ -178,14 +177,7 @@ function AppRoutes() {
             </RoleGuard>
           }
         />
-        <Route
-          path="settings"
-          element={
-            <RoleGuard roles={['admin']}>
-              <SettingsPage />
-            </RoleGuard>
-          }
-        />
+        <Route path="settings" element={<Navigate to="/admin/dashboard" replace />} />
 
         {/* ── All authenticated ── */}
         <Route path="profile" element={<ProfilePage />} />

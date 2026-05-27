@@ -25,7 +25,6 @@ export function AppShell() {
     '/drivers': 'Motoristas',
     '/audit': 'Auditoria',
     '/profile': 'Perfil',
-    '/settings': 'Configurações',
   }
 
   const currentTitle = Object.entries(pageTitles).find(([key]) =>

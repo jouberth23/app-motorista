@@ -1,7 +1,7 @@
 import { Link, useLocation } from 'react-router-dom'
 import {
   LayoutDashboard, Car, PlusCircle, ClipboardCheck, BarChart3,
-  Users, Shield, Settings, LogOut, ChevronRight, Wifi, WifiOff,
+  Users, Shield, LogOut, ChevronRight, Wifi, WifiOff,
   KeyRound, AlertCircle, Send, Clock, Building2,
 } from 'lucide-react'
 import { cn, initials } from '@/lib/utils'
@@ -74,7 +74,6 @@ const adminNav: NavSection[] = [
     items: [
       { to: '/drivers', label: 'Motoristas', icon: Users },
       { to: '/admin/access-codes', label: 'Códigos de Acesso', icon: KeyRound },
-      { to: '/settings', label: 'Configurações', icon: Settings },
     ],
   },
 ]
