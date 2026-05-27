@@ -1,4 +1,4 @@
-import { useRef, useState, useMemo } from 'react'
+import { useRef, useState, useMemo, useEffect } from 'react'
 import ReactSignatureCanvas from 'react-signature-canvas'
 import { Trash2, PenLine, Keyboard, CheckCircle2, User, RotateCcw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -138,9 +138,17 @@ export function SignaturePad({
 
   const isSaved = Boolean(savedResult?.dataUrl)
 
+  // Debounce the name used for the canvas preview so buildTypedCanvas
+  // (expensive Canvas 2D ops) doesn't run on every keystroke.
+  const [previewName, setPreviewName] = useState(defaultName)
+  useEffect(() => {
+    const id = setTimeout(() => setPreviewName(typedName), 250)
+    return () => clearTimeout(id)
+  }, [typedName])
+
   const typedPreview = useMemo(
-    () => (typedName.trim() ? buildTypedCanvas(typedName) : ''),
-    [typedName],
+    () => (previewName.trim() ? buildTypedCanvas(previewName) : ''),
+    [previewName],
   )
   const profilePreview = useMemo(() => (driverName ? buildTypedCanvas(driverName) : ''), [driverName])
 

@@ -118,14 +118,22 @@ export default defineConfig({
               cacheableResponse: { statuses: [0, 200] },
             },
           },
-          // Supabase Storage (photos/signatures) — cache first
+          // Supabase Storage — signed URLs (expire in 1h, never cache them)
+          {
+            urlPattern: /^https:\/\/.*\.supabase\.co\/storage\/v1\/object\/sign\/.*/i,
+            handler: 'NetworkOnly',
+          },
+          // Supabase Storage — static assets (avatars, documents): network-first,
+          // status 200 only — never cache opaque (no-cors) responses to avoid the
+          // "opaque response used for a request whose type is not no-cors" SW error.
           {
             urlPattern: /^https:\/\/.*\.supabase\.co\/storage\/.*/i,
-            handler: 'CacheFirst',
+            handler: 'NetworkFirst',
             options: {
               cacheName: 'supabase-storage',
-              expiration: { maxEntries: 200, maxAgeSeconds: 60 * 60 * 24 * 30 },
-              cacheableResponse: { statuses: [0, 200] },
+              networkTimeoutSeconds: 6,
+              expiration: { maxEntries: 100, maxAgeSeconds: 60 * 60 * 24 * 7 },
+              cacheableResponse: { statuses: [200] },
             },
           },
         ],

@@ -46,11 +46,22 @@ const STATUS_LABELS: Record<string, string> = {
 
 // ── Internal builder ───────────────────────────────────────────────────────────
 
+async function fetchApproverName(approverId: string): Promise<string> {
+  const { data } = await supabase
+    .from('profiles')
+    .select('nome')
+    .eq('id', approverId)
+    .single()
+  return data?.nome ?? 'Aprovador não identificado'
+}
+
 async function buildPDFDoc(
   trip: Trip,
   photoUrls: Record<string, string> = {},
   sigUrls: Record<string, string> = {},
 ): Promise<jsPDF> {
+  const approverName = trip.approved_by ? await fetchApproverName(trip.approved_by) : '—'
+
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
 
   const MARGIN   = 14
@@ -303,7 +314,7 @@ async function buildPDFDoc(
   if (trip.approved_at) {
     y += 2
     addSection('Aprovação')
-    addTwoCol('Aprovado em', formatDateTime(trip.approved_at), 'Aprovado por', trip.approved_by ?? '—')
+    addTwoCol('Aprovado em', formatDateTime(trip.approved_at), 'Aprovado por', approverName)
   }
 
   if (trip.motivo_recusa) {
