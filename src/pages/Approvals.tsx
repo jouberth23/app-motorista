@@ -340,7 +340,10 @@ function ApprovalCard({ trip }: { trip: Trip }) {
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export function ApprovalsPage() {
-  const { trips, loading, refetch } = useTrips()
+  const { user, role, loading: authLoading } = useAuthContext()
+  const ready = !authLoading && !!user && !!role
+  const { trips, loading: tripsLoading, refetch } = useTrips(undefined, { enabled: ready })
+  const loading = !ready || tripsLoading
   const [refreshing, setRefreshing] = useState(false)
 
   const handleRefresh = async () => {

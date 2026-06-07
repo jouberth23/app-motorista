@@ -93,9 +93,11 @@ const chartData = [
 ]
 
 export function DashboardPage() {
-  const { profile, role } = useAuthContext()
+  const { user, profile, role, loading: authLoading } = useAuthContext()
   const { isMotorista, isCentral } = useRole(role)
-  const { trips, loading } = useTrips(isMotorista ? undefined : undefined)
+  const ready = !authLoading && !!user && !!role
+  const { trips, loading: tripsLoading } = useTrips(isMotorista ? user?.id : undefined, { enabled: ready })
+  const loading = !ready || tripsLoading
 
   const stats = useMemo(() => {
     const myTrips = trips

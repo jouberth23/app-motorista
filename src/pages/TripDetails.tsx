@@ -62,7 +62,6 @@ interface EditFormState {
   final_base: string
   embarque_empregado: string
   desembarque_empregado: string
-  descricao_viagem: string
   justificativa: string
   setor: string
   passengers: { nome: string; matricula: string }[]
@@ -84,7 +83,6 @@ function initEditForm(trip: Trip): EditFormState {
     final_base: trip.final_base,
     embarque_empregado: trip.embarque_empregado,
     desembarque_empregado: trip.desembarque_empregado,
-    descricao_viagem: trip.descricao_viagem,
     justificativa: trip.justificativa,
     setor: trip.setor,
     passengers: trip.passengers?.map((p) => ({ nome: p.nome, matricula: p.matricula ?? '' })) ?? [],
@@ -366,7 +364,7 @@ export function TripDetailsPage() {
           final_base: editForm.final_base,
           embarque_empregado: editForm.embarque_empregado,
           desembarque_empregado: editForm.desembarque_empregado,
-          descricao_viagem: editForm.descricao_viagem,
+          descricao_viagem: editForm.justificativa,
           justificativa: editForm.justificativa,
           setor: editForm.setor,
         },
@@ -639,10 +637,6 @@ export function TripDetailsPage() {
             <DetailItem label="Final da Base" value={trip.final_base} />
             <DetailItem label="Embarque" value={trip.embarque_empregado} />
             <DetailItem label="Desembarque" value={trip.desembarque_empregado} />
-            <div className="col-span-2 space-y-1">
-              <span className="label-text">Descrição da Viagem</span>
-              <p className="text-sm text-foreground bg-muted/30 p-3 rounded-lg">{trip.descricao_viagem}</p>
-            </div>
           </DetailGrid>
         </DetailSection>
 
@@ -928,15 +922,6 @@ export function TripDetailsPage() {
                   <div className="space-y-1.5">
                     <Label className="text-xs">Desembarque do Empregado</Label>
                     <Input value={editForm.desembarque_empregado} onChange={(e) => setEditForm((f) => f ? { ...f, desembarque_empregado: e.target.value } : f)} />
-                  </div>
-                  <div className="col-span-2 space-y-1.5">
-                    <Label className="text-xs">Descrição da Viagem</Label>
-                    <Textarea
-                      rows={2}
-                      className="resize-none"
-                      value={editForm.descricao_viagem}
-                      onChange={(e) => setEditForm((f) => f ? { ...f, descricao_viagem: e.target.value } : f)}
-                    />
                   </div>
                 </div>
               </div>

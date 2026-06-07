@@ -11,13 +11,9 @@ import {
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from '@/components/ui/select'
 import { useAuthContext } from '@/contexts/AuthContext'
 import { toast } from 'sonner'
 import { APP_NAME, COMPANY_NAME, ROLE_LABELS } from '@/lib/constants'
-import { BASES } from '@/types/enums'
 import type { AppRole } from '@/types/enums'
 import { cn } from '@/lib/utils'
 
@@ -29,9 +25,7 @@ const baseSchema = z.object({
   confirmPassword: z.string(),
 })
 
-const motoristaSchema = baseSchema.extend({
-  base: z.string().min(1, 'Selecione a base'),
-}).refine((d) => d.password === d.confirmPassword, {
+const motoristaSchema = baseSchema.refine((d) => d.password === d.confirmPassword, {
   message: 'As senhas não coincidem', path: ['confirmPassword'],
 })
 
@@ -78,7 +72,6 @@ export function RegisterPage() {
 
   const motoristaForm = useForm<MotoristaData>({
     resolver: zodResolver(motoristaSchema),
-    defaultValues: { base: '' },
   })
 
   const centralForm = useForm<CentralData>({
@@ -109,7 +102,6 @@ export function RegisterPage() {
       const result = await signUp(data.email, data.password, {
         nome: data.nome,
         telefone: data.telefone,
-        base: data.base,
         access_code: access.code,
       }) as { data: { session: unknown }; error: { message: string; code?: string } | null }
 
@@ -252,16 +244,6 @@ export function RegisterPage() {
               </Field>
               <Field label="E-mail *" error={motoristaForm.formState.errors.email?.message}>
                 <Input placeholder="seu@email.com" type="email" autoComplete="email" {...motoristaForm.register('email')} />
-              </Field>
-              <Field label="Base principal *" error={motoristaForm.formState.errors.base?.message}>
-                <Select onValueChange={(v) => motoristaForm.setValue('base', v)}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Selecione a base" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {BASES.map((b) => <SelectItem key={b} value={b}>{b}</SelectItem>)}
-                  </SelectContent>
-                </Select>
               </Field>
               <Field label="Senha *" error={motoristaForm.formState.errors.password?.message}>
                 <PasswordInput show={showPassword} onToggle={() => setShowPassword(!showPassword)} {...motoristaForm.register('password')} />

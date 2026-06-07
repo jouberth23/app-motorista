@@ -22,13 +22,6 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import { TripStepper } from '@/components/trips/TripStepper'
 import { PhotoCapture } from '@/components/trips/PhotoCapture'
 import type { PhotoCaptureResult } from '@/components/trips/PhotoCapture'
@@ -39,19 +32,19 @@ import { useAuthContext } from '@/contexts/AuthContext'
 import { supabase } from '@/lib/supabase'
 import { logAudit } from '@/lib/audit'
 import { toast } from 'sonner'
-import { SETORES, BASES } from '@/types/enums'
+import { SETORES } from '@/types/enums'
 import { generateProtocol } from '@/lib/utils'
 import { cn } from '@/lib/utils'
 import type { TripType } from '@/types/enums'
 
 const STEPS = [
   { label: 'Dados Básicos', description: 'Taxista, data, placa' },
-  { label: 'Horários & KM', description: 'Tempos e quilometragem' },
   { label: 'Locais', description: 'Origem e destino' },
   { label: 'Passageiros', description: 'Lista de passageiros' },
   { label: 'Setor', description: 'Departamento' },
   { label: 'Justificativa', description: 'Motivo da viagem' },
   { label: 'Fotos', description: 'Registro obrigatório' },
+  { label: 'Horários & KM', description: 'Tempos e quilometragem' },
   { label: 'Assinaturas', description: 'Assinatura digital' },
   { label: 'Revisão', description: 'Confirmar e enviar' },
 ]
@@ -85,7 +78,6 @@ interface FormState {
   final_base: string
   embarque_empregado: string
   desembarque_empregado: string
-  descricao_viagem: string
   justificativa: string
   setor: string
   passengers: { nome: string; matricula: string }[]
@@ -119,7 +111,6 @@ export function NewTripPage() {
     final_base: '',
     embarque_empregado: '',
     desembarque_empregado: '',
-    descricao_viagem: '',
     justificativa: '',
     setor: '',
     passengers: [{ nome: '', matricula: '' }],
@@ -166,37 +157,35 @@ export function NewTripPage() {
         if (!formData.taxista.trim()) return 'Nome do taxista obrigatório'
         if (!formData.data) return 'Data obrigatória'
         if (!formData.placa.trim()) return 'Placa obrigatória'
-        if (!formData.base) return 'Base obrigatória'
         if (!formData.tipo_viagem) return 'Tipo de viagem obrigatório'
         return null
       case 1:
+        if (!formData.inicio_base.trim()) return 'Local de início obrigatório'
+        if (!formData.final_base.trim()) return 'Local final obrigatório'
+        if (!formData.embarque_empregado.trim()) return 'Local de embarque obrigatório'
+        if (!formData.desembarque_empregado.trim()) return 'Local de desembarque obrigatório'
+        return null
+      case 2:
+        if (formData.passengers.some((p) => !p.nome.trim())) return 'Todos os passageiros devem ter nome'
+        if (formData.passengers.length === 0) return 'Pelo menos um passageiro é obrigatório'
+        return null
+      case 3:
+        if (!formData.setor) return 'Setor obrigatório'
+        return null
+      case 4:
+        if (formData.justificativa.trim().length < 10) return 'Justificativa deve ter pelo menos 10 caracteres'
+        return null
+      case 5:
+        if (!photoKmInicial.previewUrl && !photoKmInicial.originalFile) return 'Foto da quilometragem inicial é obrigatória'
+        if (!photoKmFinal.previewUrl && !photoKmFinal.originalFile) return 'Foto da quilometragem final é obrigatória'
+        return null
+      case 6:
         if (!formData.hora_inicial) return 'Hora inicial obrigatória'
         if (!formData.hora_final) return 'Hora final obrigatória'
         if (!formData.km_inicial) return 'KM inicial obrigatório'
         if (!formData.km_final) return 'KM final obrigatório'
         if (parseFloat(formData.km_final) < parseFloat(formData.km_inicial))
           return 'KM final não pode ser menor que KM inicial'
-        return null
-      case 2:
-        if (!formData.inicio_base.trim()) return 'Local de início obrigatório'
-        if (!formData.final_base.trim()) return 'Local final obrigatório'
-        if (!formData.embarque_empregado.trim()) return 'Local de embarque obrigatório'
-        if (!formData.desembarque_empregado.trim()) return 'Local de desembarque obrigatório'
-        if (!formData.descricao_viagem.trim()) return 'Descrição obrigatória'
-        return null
-      case 3:
-        if (formData.passengers.some((p) => !p.nome.trim())) return 'Todos os passageiros devem ter nome'
-        if (formData.passengers.length === 0) return 'Pelo menos um passageiro é obrigatório'
-        return null
-      case 4:
-        if (!formData.setor) return 'Setor obrigatório'
-        return null
-      case 5:
-        if (formData.justificativa.trim().length < 10) return 'Justificativa deve ter pelo menos 10 caracteres'
-        return null
-      case 6:
-        if (!photoKmInicial.previewUrl && !photoKmInicial.originalFile) return 'Foto da quilometragem inicial é obrigatória'
-        if (!photoKmFinal.previewUrl && !photoKmFinal.originalFile) return 'Foto da quilometragem final é obrigatória'
         return null
       case 7:
         if (!sigPassageiro.dataUrl) return 'Assinatura do passageiro é obrigatória'
@@ -350,7 +339,7 @@ export function NewTripPage() {
         status: isDraft ? 'rascunho' : 'enviado',
         data: formData.data,
         placa: formData.placa.toUpperCase(),
-        base: formData.base,
+        base: formData.base || profile?.base || 'Não informada',
         tipo_viagem: formData.tipo_viagem,
         hora_inicial: formData.hora_inicial,
         hora_final: formData.hora_final,
@@ -362,7 +351,7 @@ export function NewTripPage() {
         final_base: formData.final_base,
         embarque_empregado: formData.embarque_empregado,
         desembarque_empregado: formData.desembarque_empregado,
-        descricao_viagem: formData.descricao_viagem,
+        descricao_viagem: formData.justificativa,
         justificativa: formData.justificativa,
         setor: formData.setor,
         sent_at: isDraft ? null : new Date().toISOString(),
@@ -475,20 +464,6 @@ export function NewTripPage() {
               </div>
 
               <div className="space-y-1.5">
-                <Label>Base *</Label>
-                <Select value={formData.base} onValueChange={(v) => updateField('base', v)}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Selecione a base" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {BASES.map((b) => (
-                      <SelectItem key={b} value={b}>{b}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-1.5">
                 <Label>Tipo de Viagem *</Label>
                 <div className="grid grid-cols-2 gap-2">
                   {(['municipal', 'intermunicipal'] as TripType[]).map((tipo) => (
@@ -512,7 +487,7 @@ export function NewTripPage() {
           </div>
         )
 
-      case 1:
+      case 6:
         return (
           <div className="space-y-5">
             <div className="flex items-center gap-3 mb-2">
@@ -598,7 +573,7 @@ export function NewTripPage() {
           </div>
         )
 
-      case 2:
+      case 1:
         return (
           <div className="space-y-5">
             <div className="flex items-center gap-3 mb-2">
@@ -644,20 +619,11 @@ export function NewTripPage() {
                   placeholder="Local de desembarque"
                 />
               </div>
-              <div className="sm:col-span-2 space-y-1.5">
-                <Label>Descrição da Viagem *</Label>
-                <Textarea
-                  value={formData.descricao_viagem}
-                  onChange={(e) => updateField('descricao_viagem', e.target.value)}
-                  placeholder="Descreva brevemente o objetivo da viagem..."
-                  rows={3}
-                />
-              </div>
             </div>
           </div>
         )
 
-      case 3:
+      case 2:
         return (
           <div className="space-y-5">
             <div className="flex items-center gap-3 mb-2">
@@ -718,7 +684,7 @@ export function NewTripPage() {
           </div>
         )
 
-      case 4:
+      case 3:
         return (
           <div className="space-y-5">
             <div className="flex items-center gap-3 mb-2">
@@ -751,7 +717,7 @@ export function NewTripPage() {
           </div>
         )
 
-      case 5:
+      case 4:
         return (
           <div className="space-y-5">
             <div className="flex items-center gap-3 mb-2">
@@ -784,7 +750,7 @@ export function NewTripPage() {
           </div>
         )
 
-      case 6:
+      case 5:
         return (
           <div className="space-y-6">
             <div className="flex items-center gap-3 mb-2">
@@ -820,7 +786,7 @@ export function NewTripPage() {
                 address: result.address,
                 locationDenied: result.locationDenied,
               })}
-              error={stepErrors[6] && !photoKmInicial.previewUrl ? 'Foto obrigatória' : undefined}
+              error={stepErrors[5] && !photoKmInicial.previewUrl ? 'Foto obrigatória' : undefined}
             />
 
             <PhotoCapture
@@ -845,7 +811,7 @@ export function NewTripPage() {
                 locationDenied: result.locationDenied,
               })}
               error={
-                stepErrors[6] && !photoKmFinal.previewUrl && photoKmInicial.previewUrl
+                stepErrors[5] && !photoKmFinal.previewUrl && photoKmInicial.previewUrl
                   ? 'Foto obrigatória'
                   : undefined
               }
@@ -914,17 +880,7 @@ export function NewTripPage() {
                 <ReviewRow label="Taxista" value={formData.taxista} />
                 <ReviewRow label="Data" value={formData.data} />
                 <ReviewRow label="Placa" value={formData.placa} />
-                <ReviewRow label="Base" value={formData.base} />
                 <ReviewRow label="Tipo" value={formData.tipo_viagem} />
-              </ReviewSection>
-
-              <ReviewSection title="Horários e KM">
-                <ReviewRow label="Hora Inicial" value={formData.hora_inicial} />
-                <ReviewRow label="Hora Final" value={formData.hora_final} />
-                {formData.hora_parada && <ReviewRow label="Hora Parada" value={formData.hora_parada} />}
-                <ReviewRow label="KM Inicial" value={formData.km_inicial} />
-                <ReviewRow label="KM Final" value={formData.km_final} />
-                <ReviewRow label="Total KM" value={totalKm ? `${totalKm} km` : '-'} highlight />
               </ReviewSection>
 
               <ReviewSection title="Locais">
@@ -971,6 +927,15 @@ export function NewTripPage() {
                   </div>
                 </ReviewSection>
               )}
+
+              <ReviewSection title="Horários e KM">
+                <ReviewRow label="Hora Inicial" value={formData.hora_inicial} />
+                <ReviewRow label="Hora Final" value={formData.hora_final} />
+                {formData.hora_parada && <ReviewRow label="Hora Parada" value={formData.hora_parada} />}
+                <ReviewRow label="KM Inicial" value={formData.km_inicial} />
+                <ReviewRow label="KM Final" value={formData.km_final} />
+                <ReviewRow label="Total KM" value={totalKm ? `${totalKm} km` : '-'} highlight />
+              </ReviewSection>
 
               {/* Signatures preview */}
               {(sigPassageiro.dataUrl || sigMotorista.dataUrl) && (

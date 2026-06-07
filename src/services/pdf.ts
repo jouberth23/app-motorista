@@ -230,11 +230,7 @@ async function buildPDFDoc(
   addTwoCol('Saída da Base', trip.inicio_base, 'Retorno à Base', trip.final_base)
   addTwoCol('Embarque', trip.embarque_empregado, 'Desembarque', trip.desembarque_empregado)
 
-  // ── Descrição & Justificativa ─────────────────────────────────────────────
-
-  y += 2
-  addSection('Descrição da Viagem')
-  addTextBlock(trip.descricao_viagem)
+  // ── Justificativa ─────────────────────────────────────────────────────────
 
   y += 2
   addSection('Justificativa')

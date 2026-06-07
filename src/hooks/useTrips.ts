@@ -5,7 +5,8 @@ import type { Trip } from '@/types/trip'
 import type { TripStatus } from '@/types/enums'
 import { toast } from 'sonner'
 
-export function useTrips(driverId?: string) {
+export function useTrips(driverId?: string, options?: { enabled?: boolean }) {
+  const enabled = options?.enabled ?? true
   const [trips, setTrips] = useState<Trip[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -37,11 +38,18 @@ export function useTrips(driverId?: string) {
     }
   }, [driverId])
 
+  // Limpa os dados imediatamente ao trocar de driver/usuário, para nunca exibir
+  // viagens de outra conta enquanto a nova consulta ainda não retornou
   useEffect(() => {
-    fetchTrips()
-  }, [fetchTrips])
+    setTrips([])
+    setLoading(true)
+  }, [driverId])
 
-  return { trips, loading, refetch: fetchTrips }
+  useEffect(() => {
+    if (enabled) fetchTrips()
+  }, [fetchTrips, enabled])
+
+  return { trips, loading: enabled ? loading : true, refetch: fetchTrips }
 }
 
 export function useTripsByStatus(status?: TripStatus) {

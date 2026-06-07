@@ -40,7 +40,6 @@ export const tripStep3Schema = z.object({
   final_base: z.string().min(2, 'Local final obrigatório'),
   embarque_empregado: z.string().min(2, 'Local de embarque obrigatório'),
   desembarque_empregado: z.string().min(2, 'Local de desembarque obrigatório'),
-  descricao_viagem: z.string().min(5, 'Descrição obrigatória'),
 })
 
 export const tripStep4Schema = z.object({

@@ -48,7 +48,6 @@ const supervisorNav: NavSection[] = [
     group: 'GESTÃO',
     items: [
       { to: '/reports', label: 'Relatórios', icon: BarChart3 },
-      { to: '/audit', label: 'Auditoria', icon: Shield },
     ],
   },
 ]

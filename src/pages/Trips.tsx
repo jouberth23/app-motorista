@@ -99,9 +99,11 @@ function TripCard({ trip }: { trip: Trip }) {
 }
 
 export function TripsPage() {
-  const { user, role } = useAuthContext()
+  const { user, role, loading: authLoading } = useAuthContext()
   const { isMotorista } = useRole(role)
-  const { trips, loading } = useTrips(isMotorista ? user?.id : undefined)
+  const ready = !authLoading && !!user && !!role
+  const { trips, loading: tripsLoading } = useTrips(isMotorista ? user?.id : undefined, { enabled: ready })
+  const loading = !ready || tripsLoading
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<TripStatus | 'all'>('all')
 

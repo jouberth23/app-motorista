@@ -151,16 +151,16 @@ function AppRoutes() {
             </RoleGuard>
           }
         />
+
+        {/* ── Admin-only ── */}
         <Route
           path="audit"
           element={
-            <RoleGuard roles={['supervisor', 'admin']}>
+            <RoleGuard roles={['admin']}>
               <AuditPage />
             </RoleGuard>
           }
         />
-
-        {/* ── Admin-only ── */}
         <Route
           path="admin/dashboard"
           element={

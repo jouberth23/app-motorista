@@ -24,12 +24,16 @@ import { StatusBadge } from '@/components/common/StatusBadge'
 import { PageHeader } from '@/components/common/PageHeader'
 import { EmptyState } from '@/components/common/EmptyState'
 import { useTrips } from '@/hooks/useTrips'
+import { useAuthContext } from '@/contexts/AuthContext'
 import { formatDate, formatCurrency } from '@/lib/utils'
 import type { TripStatus } from '@/types/enums'
 import { Link } from 'react-router-dom'
 
 export function ReportsPage() {
-  const { trips, loading } = useTrips()
+  const { user, role, loading: authLoading } = useAuthContext()
+  const ready = !authLoading && !!user && !!role
+  const { trips, loading: tripsLoading } = useTrips(undefined, { enabled: ready })
+  const loading = !ready || tripsLoading
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<TripStatus | 'all'>('all')
   const [dateFrom, setDateFrom] = useState('')

@@ -4,17 +4,34 @@ import { supabase } from '@/lib/supabase'
 import type { Profile } from '@/types/user'
 import type { AppRole } from '@/types/enums'
 
-const PROFILE_CACHE_KEY = 'tv_profile_cache'
+const PROFILE_CACHE_PREFIX = 'tv_profile_cache_'
 
-function saveProfileCache(profile: Profile | null, role: AppRole | null) {
-  try { localStorage.setItem(PROFILE_CACHE_KEY, JSON.stringify({ profile, role })) } catch {}
+// Cache por user.id — nunca pode servir o perfil/role de outra conta como fallback
+function saveProfileCache(userId: string, profile: Profile | null, role: AppRole | null) {
+  try { localStorage.setItem(PROFILE_CACHE_PREFIX + userId, JSON.stringify({ profile, role })) } catch {}
 }
 
-function readProfileCache(): { profile: Profile | null; role: AppRole | null } | null {
+function readProfileCache(userId: string): { profile: Profile | null; role: AppRole | null } | null {
   try {
-    const raw = localStorage.getItem(PROFILE_CACHE_KEY)
+    const raw = localStorage.getItem(PROFILE_CACHE_PREFIX + userId)
     return raw ? JSON.parse(raw) : null
   } catch { return null }
+}
+
+function clearProfileCache() {
+  try {
+    for (let i = localStorage.length - 1; i >= 0; i--) {
+      const key = localStorage.key(i)
+      if (key?.startsWith(PROFILE_CACHE_PREFIX)) localStorage.removeItem(key)
+    }
+  } catch {}
+}
+
+// Dados de viagens são por-usuário (RLS). Ao trocar de conta no mesmo dispositivo,
+// o cache do Service Worker não pode servir respostas REST de uma sessão anterior.
+async function clearTripsCache() {
+  if (typeof caches === 'undefined') return
+  try { await caches.delete('supabase-rest') } catch {}
 }
 
 interface AuthState {
@@ -77,6 +94,10 @@ export function useAuth() {
         }
         return
       }
+      if (event === 'SIGNED_IN' || event === 'SIGNED_OUT') {
+        clearTripsCache()
+      }
+
       if (session?.user) {
         loadUserData(session.user, session)
       } else {
@@ -98,11 +119,11 @@ export function useAuth() {
       ])
       const profile = profileResult.data
       const role = (roleResult.data?.role as AppRole) ?? 'motorista'
-      saveProfileCache(profile, role)
+      saveProfileCache(user.id, profile, role)
       setState({ user, session, profile, role, loading: false })
     } catch {
-      // offline: usa cache local se disponível
-      const cached = readProfileCache()
+      // offline: usa cache local do MESMO usuário, se disponível (nunca de outra conta)
+      const cached = readProfileCache(user.id)
       setState({
         user,
         session,
@@ -139,7 +160,8 @@ export function useAuth() {
   }
 
   async function signOut() {
-    try { localStorage.removeItem(PROFILE_CACHE_KEY) } catch {}
+    clearProfileCache()
+    await clearTripsCache()
     return supabase.auth.signOut()
   }
 
