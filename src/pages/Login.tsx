@@ -53,16 +53,30 @@ export function LoginPage() {
   const onSubmit = async (data: FormData) => {
     setLoading(true)
     try {
-      const { error } = await signIn(data.email, data.password) as { error: Error | null }
+      const email = data.email.trim().toLowerCase()
+      const { error } = await signIn(email, data.password)
       if (error) {
-        toast.error('E-mail ou senha incorretos')
+        const msg = (error.message ?? '').toLowerCase()
+        const code = ((error as unknown as { code?: string }).code ?? '').toLowerCase()
+        console.error('[Login] Auth error:', error.message, code)
+
+        if (msg.includes('email not confirmed') || code.includes('email_not_confirmed')) {
+          toast.error('Conta não ativada. Fale com o administrador para ativar seu acesso.', { duration: 6000 })
+        } else if (msg.includes('invalid') || msg.includes('credentials') || code.includes('invalid_credentials')) {
+          toast.error('E-mail ou senha incorretos. Verifique os dados digitados.')
+        } else if (msg.includes('too many') || code.includes('over_request_rate_limit') || code.includes('too_many_requests')) {
+          toast.error('Muitas tentativas. Aguarde alguns minutos e tente novamente.')
+        } else if (msg.includes('user not found') || code.includes('user_not_found')) {
+          toast.error('Nenhuma conta encontrada com este e-mail.')
+        } else {
+          toast.error(`Erro ao entrar: ${error.message}`)
+        }
         setLoading(false)
         return
       }
       setPendingRedirect(true)
-      // keep loading=true until redirect completes
     } catch {
-      toast.error('Erro ao conectar. Tente novamente.')
+      toast.error('Erro ao conectar. Verifique sua internet e tente novamente.')
       setLoading(false)
     }
   }

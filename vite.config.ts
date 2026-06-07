@@ -103,18 +103,17 @@ export default defineConfig({
             options: {
               cacheName: 'supabase-auth',
               networkTimeoutSeconds: 4,
-              expiration: { maxEntries: 10, maxAgeSeconds: 60 * 5 },
+              expiration: { maxEntries: 10, maxAgeSeconds: 60 * 60 },
               cacheableResponse: { statuses: [0, 200] },
             },
           },
-          // Supabase REST API — network first, 4s timeout (was 10s)
+          // Supabase REST API — stale-while-revalidate: retorna cache imediato, atualiza em background
           {
             urlPattern: /^https:\/\/.*\.supabase\.co\/rest\/.*/i,
-            handler: 'NetworkFirst',
+            handler: 'StaleWhileRevalidate',
             options: {
               cacheName: 'supabase-rest',
-              networkTimeoutSeconds: 4,
-              expiration: { maxEntries: 100, maxAgeSeconds: 60 * 5 },
+              expiration: { maxEntries: 200, maxAgeSeconds: 60 * 60 * 24 },
               cacheableResponse: { statuses: [0, 200] },
             },
           },

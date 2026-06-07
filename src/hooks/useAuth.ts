@@ -4,6 +4,19 @@ import { supabase } from '@/lib/supabase'
 import type { Profile } from '@/types/user'
 import type { AppRole } from '@/types/enums'
 
+const PROFILE_CACHE_KEY = 'tv_profile_cache'
+
+function saveProfileCache(profile: Profile | null, role: AppRole | null) {
+  try { localStorage.setItem(PROFILE_CACHE_KEY, JSON.stringify({ profile, role })) } catch {}
+}
+
+function readProfileCache(): { profile: Profile | null; role: AppRole | null } | null {
+  try {
+    const raw = localStorage.getItem(PROFILE_CACHE_KEY)
+    return raw ? JSON.parse(raw) : null
+  } catch { return null }
+}
+
 interface AuthState {
   user: User | null
   session: Session | null
@@ -83,20 +96,25 @@ export function useAuth() {
         supabase.from('profiles').select('*').eq('id', user.id).single(),
         supabase.from('user_roles').select('role').eq('user_id', user.id).single(),
       ])
+      const profile = profileResult.data
+      const role = (roleResult.data?.role as AppRole) ?? 'motorista'
+      saveProfileCache(profile, role)
+      setState({ user, session, profile, role, loading: false })
+    } catch {
+      // offline: usa cache local se disponível
+      const cached = readProfileCache()
       setState({
         user,
         session,
-        profile: profileResult.data,
-        role: (roleResult.data?.role as AppRole) ?? 'motorista',
+        profile: cached?.profile ?? null,
+        role: cached?.role ?? 'motorista',
         loading: false,
       })
-    } catch {
-      setState({ user, session, profile: null, role: 'motorista', loading: false })
     }
   }
 
   async function signIn(email: string, password: string) {
-    return supabase.auth.signInWithPassword({ email, password })
+    return supabase.auth.signInWithPassword({ email: email.trim().toLowerCase(), password })
   }
 
   async function signUp(
@@ -113,11 +131,15 @@ export function useAuth() {
     return supabase.auth.signUp({
       email,
       password,
-      options: { data: metadata },
+      options: {
+        data: metadata,
+        emailRedirectTo: window.location.origin,
+      },
     })
   }
 
   async function signOut() {
+    try { localStorage.removeItem(PROFILE_CACHE_KEY) } catch {}
     return supabase.auth.signOut()
   }
 
