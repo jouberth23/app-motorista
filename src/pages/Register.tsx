@@ -63,6 +63,7 @@ export function RegisterPage() {
   const [showConfirm, setShowConfirm] = useState(false)
   const [loading, setLoading] = useState(false)
   const [done, setDone] = useState(false)
+  const [autoLogin, setAutoLogin] = useState(false)
   const [access, setAccess] = useState<StoredAccess | null>(null)
 
   useEffect(() => {
@@ -118,6 +119,7 @@ export function RegisterPage() {
       }
 
       sessionStorage.removeItem('tv_access')
+      setAutoLogin(!!result.data?.session)
       setDone(true)
 
       if (result.data?.session) {
@@ -148,6 +150,7 @@ export function RegisterPage() {
       }
 
       sessionStorage.removeItem('tv_access')
+      setAutoLogin(!!result.data?.session)
       setDone(true)
 
       if (result.data?.session) {
@@ -188,12 +191,16 @@ export function RegisterPage() {
           <div>
             <h2 className="font-display text-xl font-bold mb-2">Conta criada!</h2>
             <p className="text-sm text-muted-foreground leading-relaxed">
-              Verifique seu e-mail para confirmar o cadastro e depois faça login com seu e-mail e senha.
+              {autoLogin
+                ? 'Tudo pronto! Você já está conectado — redirecionando...'
+                : 'Verifique seu e-mail para confirmar o cadastro e depois faça login com seu e-mail e senha.'}
             </p>
           </div>
-          <Button className="w-full" onClick={() => navigate('/login')}>
-            Ir para o login
-          </Button>
+          {!autoLogin && (
+            <Button className="w-full" onClick={() => navigate('/login')}>
+              Ir para o login
+            </Button>
+          )}
         </motion.div>
       </div>
     )
