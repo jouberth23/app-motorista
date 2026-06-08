@@ -29,7 +29,7 @@ export function AppShell() {
 
   const currentTitle = Object.entries(pageTitles).find(([key]) =>
     pathname === key || pathname.startsWith(key + '/'),
-  )?.[1] ?? 'TaxiVoucher'
+  )?.[1] ?? 'Transmundim Voucher'
 
   return (
     <div className="flex h-screen bg-background overflow-hidden">

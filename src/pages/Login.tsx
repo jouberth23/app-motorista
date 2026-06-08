@@ -4,7 +4,7 @@ import { motion } from 'framer-motion'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { Car, Eye, EyeOff, Loader2, KeyRound } from 'lucide-react'
+import { Eye, EyeOff, Loader2, KeyRound } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -96,8 +96,8 @@ export function LoginPage() {
       >
         {/* Logo */}
         <div className="flex flex-col items-center mb-8">
-          <div className="flex items-center justify-center w-16 h-16 rounded-2xl bg-primary/15 border border-primary/30 mb-4 shadow-xl shadow-primary/10">
-            <Car className="h-8 w-8 text-primary" />
+          <div className="flex items-center justify-center w-16 h-16 rounded-2xl overflow-hidden border border-primary/30 mb-4 shadow-xl shadow-primary/10">
+            <img src="/icons/icon-512.png" alt={APP_NAME} className="w-full h-full object-cover" />
           </div>
           <h1 className="font-display text-2xl font-bold text-foreground">{APP_NAME}</h1>
           <p className="text-sm text-muted-foreground mt-1">{COMPANY_NAME}</p>

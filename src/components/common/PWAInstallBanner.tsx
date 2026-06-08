@@ -104,11 +104,11 @@ export function PWAInstallBanner() {
               {/* App header */}
               <div className="flex items-center gap-3 mb-3 pr-6">
                 <div className="flex-shrink-0 w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center shadow-lg shadow-blue-900/40 overflow-hidden">
-                  <img src="/icons/icon-192.png" alt="TaxiVoucher" className="w-10 h-10" />
+                  <img src="/icons/icon-192.png" alt="Transmundim Voucher" className="w-10 h-10" />
                 </div>
                 <div className="min-w-0">
                   <p className="font-display font-semibold text-sm text-foreground leading-tight">
-                    Instalar TaxiVoucher
+                    Instalar Transmundim Voucher
                   </p>
                   <p className="text-xs text-muted-foreground mt-0.5">
                     {isIOS ? 'Abrir como app — sem o Safari' : 'Adicionar à tela inicial'}

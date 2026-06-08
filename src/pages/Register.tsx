@@ -213,8 +213,8 @@ export function RegisterPage() {
       >
         {/* Logo */}
         <div className="flex flex-col items-center mb-6">
-          <div className="flex items-center justify-center w-14 h-14 rounded-2xl bg-primary/15 border border-primary/30 mb-3 shadow-xl shadow-primary/10">
-            <Car className="h-7 w-7 text-primary" />
+          <div className="flex items-center justify-center w-14 h-14 rounded-2xl overflow-hidden border border-primary/30 mb-3 shadow-xl shadow-primary/10">
+            <img src="/icons/icon-512.png" alt={APP_NAME} className="w-full h-full object-cover" />
           </div>
           <h1 className="font-display text-xl font-bold text-foreground">{APP_NAME}</h1>
           <p className="text-xs text-muted-foreground mt-1">{COMPANY_NAME}</p>

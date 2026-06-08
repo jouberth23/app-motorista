@@ -8,10 +8,10 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'prompt',
-      includeAssets: ['favicon.svg', 'icons/*.svg', 'icons/*.png'],
+      includeAssets: ['favicon.ico', 'favicon-16x16.png', 'favicon-32x32.png', 'apple-touch-icon.png', 'icons/*.png'],
       manifest: {
-        name: 'TaxiVoucher',
-        short_name: 'TaxiVoucher',
+        name: 'Transmundim Voucher',
+        short_name: 'Transmundim Voucher',
         description: 'Sistema corporativo de gestão e controle de viagens de táxi.',
         theme_color: '#0a0e1b',
         background_color: '#0a0e1b',
@@ -39,12 +39,6 @@ export default defineConfig({
             type: 'image/png',
             purpose: 'maskable',
           },
-          // SVG fallback for browsers that support it
-          {
-            src: '/icons/icon-512.svg',
-            sizes: 'any',
-            type: 'image/svg+xml',
-          },
         ],
         shortcuts: [
           {
@@ -67,7 +61,7 @@ export default defineConfig({
             src: '/og-image.svg',
             sizes: '1200x630',
             type: 'image/svg+xml',
-            label: 'TaxiVoucher Dashboard',
+            label: 'Transmundim Voucher Dashboard',
           },
         ],
       },
