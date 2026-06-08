@@ -54,29 +54,70 @@ function openDb(): Promise<IDBDatabase> {
     return Promise.reject(new Error('IndexedDB indisponível'))
   }
   if (!dbPromise) {
-    dbPromise = new Promise((resolve, reject) => {
-      const req = indexedDB.open(DB_NAME, DB_VERSION)
-      req.onupgradeneeded = () => {
-        const db = req.result
-        if (!db.objectStoreNames.contains(STORE)) {
-          const store = db.createObjectStore(STORE, { keyPath: 'id' })
-          store.createIndex('driverId', 'driverId', { unique: false })
-        }
+    dbPromise = new Promise<IDBDatabase>((resolve, reject) => {
+      // Timeout de segurança: alguns WebViews nunca disparam onsuccess/onerror
+      const timer = setTimeout(() => {
+        dbPromise = null
+        reject(new Error('IndexedDB open timeout'))
+      }, 4000)
+
+      let req: IDBOpenDBRequest
+      try {
+        req = indexedDB.open(DB_NAME, DB_VERSION)
+      } catch (err) {
+        clearTimeout(timer)
+        dbPromise = null
+        reject(err)
+        return
       }
-      req.onsuccess = () => resolve(req.result)
+
+      req.onupgradeneeded = () => {
+        try {
+          const db = req.result
+          if (!db.objectStoreNames.contains(STORE)) {
+            const store = db.createObjectStore(STORE, { keyPath: 'id' })
+            store.createIndex('driverId', 'driverId', { unique: false })
+          }
+        } catch {}
+      }
+      req.onsuccess = () => {
+        clearTimeout(timer)
+        resolve(req.result)
+      }
       req.onerror = () => {
-        dbPromise = null // permite nova tentativa na próxima chamada
+        clearTimeout(timer)
+        dbPromise = null
         reject(req.error)
+      }
+      // onblocked: outra aba tem o DB aberto com versão mais antiga
+      req.onblocked = () => {
+        clearTimeout(timer)
+        dbPromise = null
+        reject(new Error('IndexedDB blocked'))
       }
     })
   }
   return dbPromise
 }
 
-async function withStore<T>(mode: IDBTransactionMode, fn: (store: IDBObjectStore) => IDBRequest<T>): Promise<T> {
+async function withStore<T>(
+  mode: IDBTransactionMode,
+  fn: (store: IDBObjectStore) => IDBRequest<T>,
+): Promise<T> {
   const db = await openDb()
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE, mode)
+  return new Promise<T>((resolve, reject) => {
+    let tx: IDBTransaction
+    try {
+      tx = db.transaction(STORE, mode)
+    } catch (err) {
+      reject(err)
+      return
+    }
+    // tx.onabort cobre: cota excedida, disco cheio, erro interno do navegador.
+    // Sem este handler a Promise ficaria pendente para sempre nesses casos.
+    tx.onabort = () => reject(tx.error ?? new Error('IndexedDB transaction aborted'))
+    tx.onerror = () => reject(tx.error ?? new Error('IndexedDB transaction error'))
+
     const store = tx.objectStore(STORE)
     const req = fn(store)
     req.onsuccess = () => resolve(req.result)
@@ -102,10 +143,10 @@ function stripBlobs(record: PendingTripRecord): PendingTripRecord {
 export async function enqueuePendingTrip(record: PendingTripRecord): Promise<void> {
   try {
     await withStore('readwrite', (store) => store.put(record))
-  } catch (err) {
+  } catch {
     // DataCloneError: alguns WebViews do Android não conseguem serializar
-    // File/Blob via structured clone. Salva sem as fotos binárias — os dados
-    // do formulário e as assinaturas (dataURL) ainda são preservados.
+    // File/Blob via structured clone. Salva sem as fotos — dados do formulário
+    // e assinaturas (dataURL string) são preservados.
     const stripped = stripBlobs(record)
     await withStore('readwrite', (store) => store.put(stripped))
   }
@@ -114,8 +155,9 @@ export async function enqueuePendingTrip(record: PendingTripRecord): Promise<voi
 export async function listPendingTrips(driverId: string): Promise<PendingTripRecord[]> {
   try {
     const db = await openDb()
-    return await new Promise((resolve, reject) => {
+    return await new Promise<PendingTripRecord[]>((resolve, reject) => {
       const tx = db.transaction(STORE, 'readonly')
+      tx.onabort = () => reject(tx.error ?? new Error('Transaction aborted'))
       const index = tx.objectStore(STORE).index('driverId')
       const req = index.getAll(IDBKeyRange.only(driverId))
       req.onsuccess = () => resolve((req.result as PendingTripRecord[]) ?? [])
@@ -127,7 +169,11 @@ export async function listPendingTrips(driverId: string): Promise<PendingTripRec
 }
 
 export async function getPendingTrip(id: string): Promise<PendingTripRecord | undefined> {
-  return withStore('readonly', (store) => store.get(id))
+  try {
+    return await withStore('readonly', (store) => store.get(id))
+  } catch {
+    return undefined
+  }
 }
 
 export async function updatePendingTripStatus(
@@ -144,5 +190,7 @@ export async function updatePendingTripStatus(
 }
 
 export async function deletePendingTrip(id: string): Promise<void> {
-  await withStore('readwrite', (store) => store.delete(id))
+  try {
+    await withStore('readwrite', (store) => store.delete(id))
+  } catch {}
 }

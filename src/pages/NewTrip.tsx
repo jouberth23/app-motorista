@@ -314,9 +314,8 @@ export function NewTripPage() {
 
     try {
       // ── Tentativa online ─────────────────────────────────────────────────────
-      // Promise.race com timeout próprio: o Workbox NetworkFirst não aborta
-      // a requisição quando não há cache, podendo travar por 30-90s com WiFi
-      // sem internet. 8s é suficiente para conexões lentas sem prender a UI.
+      // Timeout próprio de 8s: o Workbox NetworkFirst não aborta quando não há
+      // cache, podendo travar 30-90s com WiFi sem internet.
       if (navigator.onLine) {
         try {
           await Promise.race([
@@ -348,9 +347,23 @@ export function NewTripPage() {
         }
       }
 
-      // ── Fila offline — IndexedDB com Blobs ───────────────────────────────────
+      // ── Fila offline — IndexedDB ──────────────────────────────────────────────
+      // Timeout de 6s: se o IndexedDB travar (tx.onabort silencioso em alguns
+      // Android WebViews), não deixa o botão girando para sempre.
+      let savedToQueue = false
       try {
-        await queueTrip({ id: tripId, protocolo, isDraft, payload: buildPendingPayload() })
+        await Promise.race([
+          queueTrip({ id: tripId, protocolo, isDraft, payload: buildPendingPayload() }),
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error('queue_timeout')), 6000),
+          ),
+        ])
+        savedToQueue = true
+      } catch (queueErr) {
+        console.error('[NewTrip] Fila offline (IndexedDB) falhou:', queueErr)
+      }
+
+      if (savedToQueue) {
         if (draftId) removeDraftLocally(draftId)
         toast.success(
           isDraft
@@ -360,27 +373,28 @@ export function NewTripPage() {
         )
         navigate('/trips')
         return
-      } catch (queueErr) {
-        console.error('[NewTrip] Fila offline (IndexedDB) falhou:', queueErr)
       }
 
-      // ── Último recurso: rascunho já está no localStorage via autosave ────────
-      // O autosave salva formData continuamente; ao chegar aqui, os dados de
-      // texto já estão salvos — apenas fotos/assinaturas podem ter sido perdidas.
-      if (isDraft && draftId) {
-        saveDraftLocally(draftId, formData)
+      // ── Último recurso: localStorage ─────────────────────────────────────────
+      // IndexedDB travou ou não está disponível. Salva os dados do formulário
+      // como JSON (fotos binárias são perdidas, mas o restante é preservado).
+      // O autosave já mantém formData aqui continuamente; escrevemos explicitamente
+      // para garantir que o passo atual está incluído.
+      try {
+        if (draftId) saveDraftLocally(draftId, formData)
         toast.success(
-          'Rascunho salvo (dados do formulário). Conecte-se à internet para incluir fotos e enviar.',
+          isDraft
+            ? 'Rascunho salvo (dados básicos, sem fotos). Conecte-se para sincronizar.'
+            : 'Dados salvos localmente (sem fotos). Abra Nova Viagem com internet para reenviar.',
           { duration: 8000 },
         )
         navigate('/trips')
-        return
+      } catch {
+        toast.error(
+          'Não foi possível salvar. Verifique o espaço disponível no dispositivo.',
+          { duration: 8000 },
+        )
       }
-
-      toast.error(
-        'Não foi possível salvar offline. Conecte-se à internet e tente novamente.',
-        { duration: 6000 },
-      )
     } catch (err) {
       console.error('[NewTrip] Erro inesperado em handleSubmit:', err)
       toast.error('Erro ao salvar viagem. Tente novamente.')
