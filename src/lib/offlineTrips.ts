@@ -64,7 +64,10 @@ function openDb(): Promise<IDBDatabase> {
         }
       }
       req.onsuccess = () => resolve(req.result)
-      req.onerror = () => reject(req.error)
+      req.onerror = () => {
+        dbPromise = null // permite nova tentativa na próxima chamada
+        reject(req.error)
+      }
     })
   }
   return dbPromise
@@ -81,8 +84,31 @@ async function withStore<T>(mode: IDBTransactionMode, fn: (store: IDBObjectStore
   })
 }
 
+function stripBlobs(record: PendingTripRecord): PendingTripRecord {
+  return {
+    ...record,
+    payload: {
+      ...record.payload,
+      photoKmInicial: record.payload.photoKmInicial
+        ? { ...record.payload.photoKmInicial, originalBlob: undefined, stampedBlob: undefined }
+        : undefined,
+      photoKmFinal: record.payload.photoKmFinal
+        ? { ...record.payload.photoKmFinal, originalBlob: undefined, stampedBlob: undefined }
+        : undefined,
+    },
+  }
+}
+
 export async function enqueuePendingTrip(record: PendingTripRecord): Promise<void> {
-  await withStore('readwrite', (store) => store.put(record))
+  try {
+    await withStore('readwrite', (store) => store.put(record))
+  } catch (err) {
+    // DataCloneError: alguns WebViews do Android não conseguem serializar
+    // File/Blob via structured clone. Salva sem as fotos binárias — os dados
+    // do formulário e as assinaturas (dataURL) ainda são preservados.
+    const stripped = stripBlobs(record)
+    await withStore('readwrite', (store) => store.put(stripped))
+  }
 }
 
 export async function listPendingTrips(driverId: string): Promise<PendingTripRecord[]> {

@@ -311,24 +311,32 @@ export function NewTripPage() {
 
     setLoading(true)
     const tripId = crypto.randomUUID()
+
     try {
-      // Online: tenta enviar diretamente, como antes.
+      // ── Tentativa online ─────────────────────────────────────────────────────
+      // Promise.race com timeout próprio: o Workbox NetworkFirst não aborta
+      // a requisição quando não há cache, podendo travar por 30-90s com WiFi
+      // sem internet. 8s é suficiente para conexões lentas sem prender a UI.
       if (navigator.onLine) {
         try {
-          await submitTripToServer({
-            tripId,
-            userId: user.id,
-            protocolo,
-            isDraft,
-            formData,
-            totalKm,
-            profileBase: profile?.base,
-            photoKmInicial,
-            photoKmFinal,
-            sigPassageiro,
-            sigMotorista,
-          })
-
+          await Promise.race([
+            submitTripToServer({
+              tripId,
+              userId: user.id,
+              protocolo,
+              isDraft,
+              formData,
+              totalKm,
+              profileBase: profile?.base,
+              photoKmInicial,
+              photoKmFinal,
+              sigPassageiro,
+              sigMotorista,
+            }),
+            new Promise<never>((_, reject) =>
+              setTimeout(() => reject(new Error('submit_timeout')), 8000),
+            ),
+          ])
           if (draftId) removeDraftLocally(draftId)
           toast.success(
             isDraft ? 'Rascunho salvo com sucesso!' : `Viagem enviada! Protocolo: ${protocolo}`,
@@ -336,25 +344,45 @@ export function NewTripPage() {
           navigate('/trips')
           return
         } catch (err) {
-          // A conexão pode ter caído no meio do envio — cai para a fila local
-          // em vez de descartar tudo o que o motorista preencheu.
-          console.error('[NewTrip] Falha no envio direto, salvando na fila offline:', err)
+          console.error('[NewTrip] Envio online falhou, salvando na fila offline:', err)
         }
       }
 
-      // Offline (ou envio direto falhou): salva localmente e deixa pendente
-      // de sincronização — nada do que foi preenchido é perdido.
-      await queueTrip({ id: tripId, protocolo, isDraft, payload: buildPendingPayload() })
-      if (draftId) removeDraftLocally(draftId)
-      toast.success(
-        isDraft
-          ? 'Sem conexão: rascunho salvo neste dispositivo. Será sincronizado automaticamente quando a internet voltar.'
-          : 'Sem conexão: viagem salva localmente e marcada como pendente. Será enviada para a central automaticamente quando a internet voltar.',
+      // ── Fila offline — IndexedDB com Blobs ───────────────────────────────────
+      try {
+        await queueTrip({ id: tripId, protocolo, isDraft, payload: buildPendingPayload() })
+        if (draftId) removeDraftLocally(draftId)
+        toast.success(
+          isDraft
+            ? 'Rascunho salvo neste dispositivo. Será sincronizado quando a internet voltar.'
+            : 'Viagem salva localmente. Será enviada para a central quando a internet voltar.',
+          { duration: 6000 },
+        )
+        navigate('/trips')
+        return
+      } catch (queueErr) {
+        console.error('[NewTrip] Fila offline (IndexedDB) falhou:', queueErr)
+      }
+
+      // ── Último recurso: rascunho já está no localStorage via autosave ────────
+      // O autosave salva formData continuamente; ao chegar aqui, os dados de
+      // texto já estão salvos — apenas fotos/assinaturas podem ter sido perdidas.
+      if (isDraft && draftId) {
+        saveDraftLocally(draftId, formData)
+        toast.success(
+          'Rascunho salvo (dados do formulário). Conecte-se à internet para incluir fotos e enviar.',
+          { duration: 8000 },
+        )
+        navigate('/trips')
+        return
+      }
+
+      toast.error(
+        'Não foi possível salvar offline. Conecte-se à internet e tente novamente.',
         { duration: 6000 },
       )
-      navigate('/trips')
     } catch (err) {
-      console.error(err)
+      console.error('[NewTrip] Erro inesperado em handleSubmit:', err)
       toast.error('Erro ao salvar viagem. Tente novamente.')
     } finally {
       setLoading(false)
