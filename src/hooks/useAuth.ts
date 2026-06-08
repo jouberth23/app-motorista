@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { User, Session } from '@supabase/supabase-js'
 import { supabase } from '@/lib/supabase'
 import type { Profile } from '@/types/user'
@@ -27,11 +27,13 @@ function clearProfileCache() {
   } catch {}
 }
 
-// Dados de viagens são por-usuário (RLS). Ao trocar de conta no mesmo dispositivo,
-// o cache do Service Worker não pode servir respostas REST de uma sessão anterior.
+// Dados de viagens/perfil são por-usuário (RLS). Ao trocar de conta no mesmo
+// dispositivo, o cache do Service Worker não pode servir respostas de uma
+// sessão anterior — isso já causou login/cadastro presos em loading no PWA.
+// Limpa também 'supabase-auth', cache legado de versões anteriores do SW.
 async function clearTripsCache() {
   if (typeof caches === 'undefined') return
-  try { await caches.delete('supabase-rest') } catch {}
+  try { await Promise.all([caches.delete('supabase-rest'), caches.delete('supabase-auth')]) } catch {}
 }
 
 interface AuthState {
@@ -42,6 +44,14 @@ interface AuthState {
   loading: boolean
 }
 
+// Hard ceiling for profile/role lookup — guarantees loading never hangs forever,
+// even if the network/service-worker request never settles (seen on PWA/mobile).
+const LOAD_USER_DATA_TIMEOUT_MS = 8000
+
+function timeout(ms: number): Promise<never> {
+  return new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), ms))
+}
+
 export function useAuth() {
   const [state, setState] = useState<AuthState>({
     user: null,
@@ -50,6 +60,9 @@ export function useAuth() {
     role: null,
     loading: true,
   })
+
+  // Guards against out-of-order results: only the most recent loadUserData call may write state
+  const loadSeq = useRef(0)
 
   useEffect(() => {
     let initialResolved = false
@@ -94,14 +107,23 @@ export function useAuth() {
         }
         return
       }
-      if (event === 'SIGNED_IN' || event === 'SIGNED_OUT') {
-        clearTripsCache()
+
+      const proceed = () => {
+        if (session?.user) {
+          loadUserData(session.user, session)
+        } else {
+          loadSeq.current++
+          setState({ user: null, session: null, profile: null, role: null, loading: false })
+        }
       }
 
-      if (session?.user) {
-        loadUserData(session.user, session)
+      if (event === 'SIGNED_IN' || event === 'SIGNED_OUT') {
+        // Clear the per-account REST cache BEFORE issuing new profile/role requests —
+        // running them concurrently lets the service worker race a cache write against
+        // a cache delete on the same store, which can leave the request hanging on PWA.
+        clearTripsCache().then(proceed)
       } else {
-        setState({ user: null, session: null, profile: null, role: null, loading: false })
+        proceed()
       }
     })
 
@@ -112,17 +134,23 @@ export function useAuth() {
   }, [])
 
   async function loadUserData(user: User, session: Session) {
+    const seq = ++loadSeq.current
     try {
-      const [profileResult, roleResult] = await Promise.all([
-        supabase.from('profiles').select('*').eq('id', user.id).single(),
-        supabase.from('user_roles').select('role').eq('user_id', user.id).single(),
+      const [profileResult, roleResult] = await Promise.race([
+        Promise.all([
+          supabase.from('profiles').select('*').eq('id', user.id).single(),
+          supabase.from('user_roles').select('role').eq('user_id', user.id).single(),
+        ]),
+        timeout(LOAD_USER_DATA_TIMEOUT_MS),
       ])
+      if (seq !== loadSeq.current) return // a newer auth event superseded this lookup
       const profile = profileResult.data
       const role = (roleResult.data?.role as AppRole) ?? 'motorista'
       saveProfileCache(user.id, profile, role)
       setState({ user, session, profile, role, loading: false })
     } catch {
-      // offline: usa cache local do MESMO usuário, se disponível (nunca de outra conta)
+      if (seq !== loadSeq.current) return
+      // offline ou timeout: usa cache local do MESMO usuário, se disponível (nunca de outra conta)
       const cached = readProfileCache(user.id)
       setState({
         user,

@@ -38,6 +38,12 @@ const centralSchema = baseSchema.extend({
 type MotoristaData = z.infer<typeof motoristaSchema>
 type CentralData = z.infer<typeof centralSchema>
 
+function roleHome(role: AppRole | null): string {
+  if (role === 'admin') return '/admin/dashboard'
+  if (role === 'supervisor') return '/approvals'
+  return '/dashboard'
+}
+
 const ROLE_COLORS: Record<AppRole, string> = {
   motorista: 'bg-blue-500/15 text-blue-400 border-blue-500/30',
   supervisor: 'bg-amber-500/15 text-amber-400 border-amber-500/30',
@@ -52,12 +58,13 @@ interface StoredAccess {
 
 export function RegisterPage() {
   const navigate = useNavigate()
-  const { signUp } = useAuthContext()
+  const { signUp, user, role, loading: authLoading } = useAuthContext()
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirm, setShowConfirm] = useState(false)
   const [loading, setLoading] = useState(false)
   const [done, setDone] = useState(false)
   const [autoLogin, setAutoLogin] = useState(false)
+  const [awaitingSession, setAwaitingSession] = useState(false)
   const [access, setAccess] = useState<StoredAccess | null>(null)
 
   useEffect(() => {
@@ -66,6 +73,15 @@ export function RegisterPage() {
     try { setAccess(JSON.parse(raw)) }
     catch { navigate('/') }
   }, [navigate])
+
+  // After auto-login on sign-up, wait for the auth state (user + role) to
+  // settle before redirecting — never navigate based on a guessed route while
+  // AuthGuard would still be showing its own loading screen.
+  useEffect(() => {
+    if (awaitingSession && !authLoading && user && role) {
+      navigate(roleHome(role), { replace: true })
+    }
+  }, [awaitingSession, authLoading, user, role, navigate])
 
   const isMotorista = access?.role === 'motorista'
   const isCentral = access?.role === 'supervisor' || access?.role === 'admin'
@@ -115,7 +131,7 @@ export function RegisterPage() {
       setDone(true)
 
       if (result.data?.session) {
-        setTimeout(() => navigate('/dashboard'), 1500)
+        setAwaitingSession(true)
       }
     } catch (err) {
       console.error('[Register] Exceção inesperada:', err)
@@ -146,8 +162,7 @@ export function RegisterPage() {
       setDone(true)
 
       if (result.data?.session) {
-        const home = access.role === 'admin' ? '/admin/dashboard' : '/approvals'
-        setTimeout(() => navigate(home), 1500)
+        setAwaitingSession(true)
       }
     } catch (err) {
       console.error('[Register] Exceção inesperada:', err)

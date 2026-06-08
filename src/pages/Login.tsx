@@ -50,6 +50,18 @@ export function LoginPage() {
     }
   }, [pendingRedirect, role, navigate])
 
+  // Safety net: useAuth always resolves loading within ~8s, but if for any
+  // reason the redirect never fires, don't leave the button spinning forever.
+  useEffect(() => {
+    if (!pendingRedirect) return
+    const t = setTimeout(() => {
+      setPendingRedirect(false)
+      setLoading(false)
+      toast.error('Login demorando mais que o esperado. Tente novamente.')
+    }, 12000)
+    return () => clearTimeout(t)
+  }, [pendingRedirect])
+
   const onSubmit = async (data: FormData) => {
     setLoading(true)
     try {

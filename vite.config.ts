@@ -90,16 +90,12 @@ export default defineConfig({
               cacheableResponse: { statuses: [0, 200] },
             },
           },
-          // Supabase Auth — network first, short timeout so offline fails fast
+          // Supabase Auth — never cache: session/user responses must always reflect
+          // the current account. A stale cached response served on a slow connection
+          // was a source of stuck/looping login state on PWA.
           {
             urlPattern: /^https:\/\/.*\.supabase\.co\/auth\/.*/i,
-            handler: 'NetworkFirst',
-            options: {
-              cacheName: 'supabase-auth',
-              networkTimeoutSeconds: 4,
-              expiration: { maxEntries: 10, maxAgeSeconds: 60 * 60 },
-              cacheableResponse: { statuses: [0, 200] },
-            },
+            handler: 'NetworkOnly',
           },
           // Supabase REST API — network first: dados são por-usuário (RLS), nunca servir
           // cache de outra sessão antes de checar a rede. Cache só serve como fallback offline.
