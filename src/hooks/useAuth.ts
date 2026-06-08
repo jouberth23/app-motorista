@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { User, Session } from '@supabase/supabase-js'
 import { supabase } from '@/lib/supabase'
+import { toast } from 'sonner'
 import type { Profile } from '@/types/user'
 import type { AppRole } from '@/types/enums'
 
@@ -29,8 +30,7 @@ function clearProfileCache() {
 
 // Dados de viagens/perfil são por-usuário (RLS). Ao trocar de conta no mesmo
 // dispositivo, o cache do Service Worker não pode servir respostas de uma
-// sessão anterior — isso já causou login/cadastro presos em loading no PWA.
-// Limpa também 'supabase-auth', cache legado de versões anteriores do SW.
+// sessão anterior.
 async function clearTripsCache() {
   if (typeof caches === 'undefined') return
   try { await Promise.all([caches.delete('supabase-rest'), caches.delete('supabase-auth')]) } catch {}
@@ -44,8 +44,8 @@ interface AuthState {
   loading: boolean
 }
 
-// Hard ceiling for profile/role lookup — guarantees loading never hangs forever,
-// even if the network/service-worker request never settles (seen on PWA/mobile).
+// Hard ceiling para as queries de perfil/role — garante que o loading nunca
+// trava para sempre, mesmo que a rede/service-worker não responda.
 const LOAD_USER_DATA_TIMEOUT_MS = 8000
 
 function timeout(ms: number): Promise<never> {
@@ -63,67 +63,116 @@ export function useAuth() {
 
   // Guards against out-of-order results: only the most recent loadUserData call may write state
   const loadSeq = useRef(0)
+  // Tracks whether the current SIGNED_OUT was triggered by the user (vs session expiry)
+  const intentionalSignOut = useRef(false)
 
   useEffect(() => {
     let initialResolved = false
 
-    // Safety net: if getSession hangs (token refresh on slow/offline network in PWA),
-    // force loading=false after 6s so the app doesn't spin forever
+    // Safety net: if INITIAL_SESSION never fires (e.g. Supabase init race), unblock after 6s.
     const safetyTimer = setTimeout(() => {
       if (!initialResolved) {
+        console.warn('[useAuth] safety timer fired — INITIAL_SESSION never resolved')
         initialResolved = true
         setState((s) => ({ ...s, loading: false }))
       }
     }, 6000)
 
+    // ── Initial session load ───────────────────────────────────────────────────
+    // getSession() is called as a fallback in case INITIAL_SESSION fires late or
+    // not at all in some environments.
     supabase.auth.getSession()
       .then(({ data: { session } }) => {
         if (initialResolved) return
         initialResolved = true
         clearTimeout(safetyTimer)
+        console.log('[useAuth] getSession resolved, user:', session?.user?.id ?? 'null')
         if (session?.user) {
           loadUserData(session.user, session)
         } else {
           setState((s) => ({ ...s, loading: false }))
         }
       })
-      .catch(() => {
+      .catch((err) => {
         if (initialResolved) return
         initialResolved = true
         clearTimeout(safetyTimer)
+        console.warn('[useAuth] getSession error:', err)
         setState((s) => ({ ...s, loading: false }))
       })
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      // INITIAL_SESSION races with getSession() — whichever resolves first wins via initialResolved
+      console.log('[useAuth] event:', event, '| user:', session?.user?.id ?? 'null')
+
+      // ── INITIAL_SESSION ────────────────────────────────────────────────────
+      // Fires synchronously (or as the first microtask) when the listener is
+      // registered. This is the primary path for restoring a session on app open.
       if (event === 'INITIAL_SESSION') {
         if (initialResolved) return
         initialResolved = true
         clearTimeout(safetyTimer)
+
         if (session?.user) {
-          loadUserData(session.user, session)
+          // KEY FIX: se já temos o perfil em cache, desbloqueia o loading
+          // IMEDIATAMENTE com os dados salvos — o usuário de retorno nunca fica
+          // na tela de carregamento. A query de rede atualiza em background.
+          const cached = readProfileCache(session.user.id)
+          if (cached) {
+            console.log('[useAuth] INITIAL_SESSION: cache hit, unblocking instantly')
+            setState({
+              user: session.user,
+              session,
+              profile: cached.profile,
+              role: cached.role ?? 'motorista',
+              loading: false,
+            })
+            // Refresh in background — atualiza sem bloquear a UI
+            loadUserData(session.user, session, /* silent */ true)
+          } else {
+            console.log('[useAuth] INITIAL_SESSION: no cache, fetching profile...')
+            loadUserData(session.user, session)
+          }
         } else {
+          console.log('[useAuth] INITIAL_SESSION: no session')
           setState((s) => ({ ...s, loading: false }))
         }
         return
       }
 
-      const proceed = () => {
-        if (session?.user) {
-          loadUserData(session.user, session)
-        } else {
-          loadSeq.current++
-          setState({ user: null, session: null, profile: null, role: null, loading: false })
-        }
+      // ── SIGNED_IN ─────────────────────────────────────────────────────────
+      // Fires on explicit login or OAuth/magic-link callback.
+      if (event === 'SIGNED_IN') {
+        clearTripsCache().then(() => {
+          if (session?.user) loadUserData(session.user, session)
+          else setState((s) => ({ ...s, loading: false }))
+        })
+        return
       }
 
-      if (event === 'SIGNED_IN' || event === 'SIGNED_OUT') {
-        // Clear the per-account REST cache BEFORE issuing new profile/role requests —
-        // running them concurrently lets the service worker race a cache write against
-        // a cache delete on the same store, which can leave the request hanging on PWA.
-        clearTripsCache().then(proceed)
-      } else {
-        proceed()
+      // ── SIGNED_OUT ────────────────────────────────────────────────────────
+      if (event === 'SIGNED_OUT') {
+        clearTripsCache().then(() => {
+          loadSeq.current++
+          if (!intentionalSignOut.current) {
+            // Sessão expirou ou o refresh token foi invalidado (não foi o
+            // usuário que clicou em "Sair"). Mostra um aviso claro em vez de
+            // silenciosamente jogar o usuário na tela de login.
+            console.warn('[useAuth] SIGNED_OUT não intencional — sessão expirada ou token inválido')
+            toast.error('Sua sessão expirou. Entre novamente para continuar.', {
+              id: 'session-expired',
+              duration: 6000,
+            })
+          }
+          intentionalSignOut.current = false
+          setState({ user: null, session: null, profile: null, role: null, loading: false })
+        })
+        return
+      }
+
+      // ── TOKEN_REFRESHED / outros ──────────────────────────────────────────
+      // Refresh periódico do access token — atualiza a sessão em background.
+      if (session?.user) {
+        loadUserData(session.user, session, /* silent */ true)
       }
     })
 
@@ -133,8 +182,14 @@ export function useAuth() {
     }
   }, [])
 
-  async function loadUserData(user: User, session: Session) {
+  // ── loadUserData ──────────────────────────────────────────────────────────
+  // Busca perfil e role do Supabase. Quando `silent=true`, não mostra loading
+  // (usado para refresh de background quando já temos dados do cache).
+  async function loadUserData(user: User, session: Session, silent = false) {
     const seq = ++loadSeq.current
+    if (!silent) {
+      setState((s) => ({ ...s, loading: true }))
+    }
     try {
       const [profileResult, roleResult] = await Promise.race([
         Promise.all([
@@ -148,9 +203,12 @@ export function useAuth() {
       const role = (roleResult.data?.role as AppRole) ?? 'motorista'
       saveProfileCache(user.id, profile, role)
       setState({ user, session, profile, role, loading: false })
-    } catch {
+      console.log('[useAuth] profile loaded, role:', role)
+    } catch (err) {
       if (seq !== loadSeq.current) return
-      // offline ou timeout: usa cache local do MESMO usuário, se disponível (nunca de outra conta)
+      const errMsg = err instanceof Error ? err.message : String(err)
+      console.warn('[useAuth] loadUserData failed (' + errMsg + '), using cache fallback')
+      // offline ou timeout: usa cache local do MESMO usuário, se disponível
       const cached = readProfileCache(user.id)
       setState({
         user,
@@ -188,6 +246,7 @@ export function useAuth() {
   }
 
   async function signOut() {
+    intentionalSignOut.current = true
     clearProfileCache()
     await clearTripsCache()
     return supabase.auth.signOut()
