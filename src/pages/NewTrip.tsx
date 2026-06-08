@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
@@ -17,6 +17,9 @@ import {
   Camera,
   PenLine,
   Eye,
+  WifiOff,
+  RefreshCw,
+  CloudOff,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -29,8 +32,10 @@ import { SignaturePad } from '@/components/trips/SignaturePad'
 import type { SignatureResult } from '@/components/trips/SignaturePad'
 import { PageHeader } from '@/components/common/PageHeader'
 import { useAuthContext } from '@/contexts/AuthContext'
-import { supabase } from '@/lib/supabase'
-import { logAudit } from '@/lib/audit'
+import { useOfflineQueue } from '@/hooks/useOfflineQueue'
+import { useTripSync } from '@/hooks/useTripSync'
+import type { PendingTripPayload } from '@/lib/offlineTrips'
+import { submitTripToServer } from '@/lib/tripSubmission'
 import { toast } from 'sonner'
 import { SETORES } from '@/types/enums'
 import { generateProtocol } from '@/lib/utils'
@@ -115,6 +120,46 @@ export function NewTripPage() {
     setor: '',
     passengers: [{ nome: '', matricula: '' }],
   })
+
+  const { isOnline, saveDraftLocally, getDraftLocally, removeDraftLocally } = useOfflineQueue()
+  const { pendingTrips, queueTrip, retry: retrySync } = useTripSync(user?.id, profile?.base)
+  const draftId = user ? `new_trip_${user.id}` : null
+  const [draftAutoSaveEnabled, setDraftAutoSaveEnabled] = useState(false)
+
+  // Ao abrir Nova Viagem: verifica se existe rascunho local salvo e oferece continuar/descartar
+  useEffect(() => {
+    if (!draftId) { setDraftAutoSaveEnabled(true); return }
+    const draft = getDraftLocally(draftId) as FormState | null
+    if (!draft) {
+      setDraftAutoSaveEnabled(true)
+      return
+    }
+    toast('Rascunho encontrado', {
+      description: 'Você tem uma viagem não enviada salva neste dispositivo. Deseja continuar de onde parou?',
+      duration: Infinity,
+      action: {
+        label: 'Continuar',
+        onClick: () => {
+          setFormData(draft)
+          setDraftAutoSaveEnabled(true)
+        },
+      },
+      cancel: {
+        label: 'Descartar',
+        onClick: () => {
+          removeDraftLocally(draftId)
+          setDraftAutoSaveEnabled(true)
+        },
+      },
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Salva o rascunho local automaticamente conforme o formulário é preenchido
+  useEffect(() => {
+    if (!draftId || !draftAutoSaveEnabled) return
+    saveDraftLocally(draftId, formData)
+  }, [draftId, draftAutoSaveEnabled, formData, saveDraftLocally])
 
   const totalKm = (() => {
     const ini = parseFloat(formData.km_inicial)
@@ -210,109 +255,45 @@ export function NewTripPage() {
 
   const prevStep = () => setStep((s) => Math.max(s - 1, 0))
 
-  const uploadBase64 = async (dataUrl: string, path: string): Promise<string> => {
-    const res = await fetch(dataUrl)
-    const blob = await res.blob()
-    const file = new File([blob], path.split('/').pop()!, { type: blob.type })
-    const { error } = await supabase.storage.from('signatures').upload(path, file, { upsert: true })
-    if (error) throw error
-    return path
-  }
-
-  const uploadPhotoFile = async (file: File, path: string): Promise<void> => {
-    const { error } = await supabase.storage.from('trip-photos').upload(path, file, { upsert: true })
-    if (error) throw error
-  }
-
-  const uploadPhotoWithStamp = async (
-    photo: PhotoState,
-    tipo: 'km_inicial' | 'km_final',
-    tripId: string,
-  ): Promise<void> => {
-    if (!user) return
-    const ts = Date.now()
-
-    const originalPath = photo.originalFile
-      ? `${tripId}/${tipo}_original_${ts}.jpg`
-      : undefined
-    const stampedPath = photo.stampedFile
-      ? `${tripId}/${tipo}_stamped_${ts}.jpg`
-      : undefined
-
-    if (originalPath && photo.originalFile) {
-      await uploadPhotoFile(photo.originalFile, originalPath)
-    }
-    if (stampedPath && photo.stampedFile) {
-      await uploadPhotoFile(photo.stampedFile, stampedPath)
-    }
-
-    // storage_path → stamped (primary display); fallback to original
-    const primaryPath = stampedPath ?? originalPath ?? ''
-
-    // Try full insert with metadata columns (requires add-photo-metadata migration).
-    // Fall back to base columns if migration hasn't been applied yet.
-    let photoId: string | undefined
-    const { data: fullData, error: fullError } = await supabase
-      .from('photos')
-      .insert({
-        trip_id: tripId,
-        tipo,
-        storage_path: primaryPath,
-        original_storage_path: originalPath ?? null,
-        stamped_storage_path: stampedPath ?? null,
-        uploaded_by: user.id,
-        taken_at: photo.capturedAt ?? new Date().toISOString(),
-        captured_at: photo.capturedAt ?? new Date().toISOString(),
-        latitude: photo.latitude ?? null,
-        longitude: photo.longitude ?? null,
-        address: photo.address ?? null,
-        location_accuracy: photo.accuracy ?? null,
-        location_denied: photo.locationDenied ?? false,
-        device_timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-      })
-      .select('id')
-      .single()
-
-    if (fullError) {
-      // Metadata columns missing — insert with base columns only
-      const { data: baseData, error: baseError } = await supabase
-        .from('photos')
-        .insert({
-          trip_id: tripId,
-          tipo,
-          storage_path: primaryPath,
-          uploaded_by: user.id,
-          taken_at: photo.capturedAt ?? new Date().toISOString(),
-        })
-        .select('id')
-        .single()
-      if (baseError) throw baseError
-      photoId = baseData?.id
-    } else {
-      photoId = fullData?.id
-    }
-    if (photoId) {
-      const action = tipo === 'km_inicial'
-        ? 'photo_km_initial_uploaded'
-        : 'photo_km_final_uploaded'
-      await logAudit({
-        entity: 'photos',
-        entity_id: photoId,
-        action,
-        by_user: user.id,
-        diff: {
-          latitude: photo.latitude ?? null,
-          longitude: photo.longitude ?? null,
-          address: photo.address ?? null,
-          accuracy: photo.accuracy ?? null,
-          captured_at: photo.capturedAt ?? null,
-          has_location: !!photo.latitude,
-          stamped: !!stampedPath,
-          location_denied: photo.locationDenied ?? false,
-        },
-      })
-    }
-  }
+  // Monta a carga para a fila offline — fotos guardadas como Blob (IndexedDB
+  // suporta nativamente) e assinaturas como dataURL, sem perder nenhum dado
+  // preenchido pelo motorista mesmo sem conexão.
+  const buildPendingPayload = (): PendingTripPayload => ({
+    formData: { ...formData },
+    totalKm,
+    photoKmInicial: (photoKmInicial.originalFile || photoKmInicial.stampedFile) ? {
+      originalBlob: photoKmInicial.originalFile,
+      stampedBlob: photoKmInicial.stampedFile,
+      capturedAt: photoKmInicial.capturedAt,
+      latitude: photoKmInicial.latitude,
+      longitude: photoKmInicial.longitude,
+      accuracy: photoKmInicial.accuracy,
+      address: photoKmInicial.address,
+      locationDenied: photoKmInicial.locationDenied,
+    } : undefined,
+    photoKmFinal: (photoKmFinal.originalFile || photoKmFinal.stampedFile) ? {
+      originalBlob: photoKmFinal.originalFile,
+      stampedBlob: photoKmFinal.stampedFile,
+      capturedAt: photoKmFinal.capturedAt,
+      latitude: photoKmFinal.latitude,
+      longitude: photoKmFinal.longitude,
+      accuracy: photoKmFinal.accuracy,
+      address: photoKmFinal.address,
+      locationDenied: photoKmFinal.locationDenied,
+    } : undefined,
+    sigPassageiro: sigPassageiro.dataUrl ? {
+      dataUrl: sigPassageiro.dataUrl,
+      signerName: sigPassageiro.signerName,
+      method: sigPassageiro.method,
+      signedAt: sigPassageiro.signedAt,
+    } : undefined,
+    sigMotorista: sigMotorista.dataUrl ? {
+      dataUrl: sigMotorista.dataUrl,
+      signerName: sigMotorista.signerName,
+      method: sigMotorista.method,
+      signedAt: sigMotorista.signedAt,
+    } : undefined,
+  })
 
   const handleSubmit = async (isDraft: boolean) => {
     if (!isDraft) {
@@ -329,86 +310,47 @@ export function NewTripPage() {
     }
 
     setLoading(true)
+    const tripId = crypto.randomUUID()
     try {
-      const tripId = crypto.randomUUID()
+      // Online: tenta enviar diretamente, como antes.
+      if (navigator.onLine) {
+        try {
+          await submitTripToServer({
+            tripId,
+            userId: user.id,
+            protocolo,
+            isDraft,
+            formData,
+            totalKm,
+            profileBase: profile?.base,
+            photoKmInicial,
+            photoKmFinal,
+            sigPassageiro,
+            sigMotorista,
+          })
 
-      const { error: tripError } = await supabase.from('trips').insert({
-        id: tripId,
-        driver_id: user.id,
-        protocolo,
-        status: isDraft ? 'rascunho' : 'enviado',
-        data: formData.data,
-        placa: formData.placa.toUpperCase(),
-        base: formData.base || profile?.base || 'Não informada',
-        tipo_viagem: formData.tipo_viagem,
-        hora_inicial: formData.hora_inicial,
-        hora_final: formData.hora_final,
-        hora_parada: formData.hora_parada || null,
-        km_inicial: parseFloat(formData.km_inicial),
-        km_final: parseFloat(formData.km_final),
-        total_km: totalKm,
-        inicio_base: formData.inicio_base,
-        final_base: formData.final_base,
-        embarque_empregado: formData.embarque_empregado,
-        desembarque_empregado: formData.desembarque_empregado,
-        descricao_viagem: formData.justificativa,
-        justificativa: formData.justificativa,
-        setor: formData.setor,
-        sent_at: isDraft ? null : new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      })
-
-      if (tripError) throw tripError
-
-      // Insert passengers
-      const validPassengers = formData.passengers.filter((p) => p.nome.trim())
-      if (validPassengers.length > 0) {
-        const { error: passengerError } = await supabase.from('passengers').insert(
-          validPassengers.map((p) => ({
-            trip_id: tripId,
-            nome: p.nome,
-            matricula: p.matricula || null,
-          })),
-        )
-        if (passengerError) throw passengerError
+          if (draftId) removeDraftLocally(draftId)
+          toast.success(
+            isDraft ? 'Rascunho salvo com sucesso!' : `Viagem enviada! Protocolo: ${protocolo}`,
+          )
+          navigate('/trips')
+          return
+        } catch (err) {
+          // A conexão pode ter caído no meio do envio — cai para a fila local
+          // em vez de descartar tudo o que o motorista preencheu.
+          console.error('[NewTrip] Falha no envio direto, salvando na fila offline:', err)
+        }
       }
 
-      // Upload photos (original + stamped versions with location metadata)
-      if (photoKmInicial.originalFile || photoKmInicial.stampedFile) {
-        await uploadPhotoWithStamp(photoKmInicial, 'km_inicial', tripId)
-      }
-
-      if (photoKmFinal.originalFile || photoKmFinal.stampedFile) {
-        await uploadPhotoWithStamp(photoKmFinal, 'km_final', tripId)
-      }
-
-      // Upload signatures
-      if (sigPassageiro.dataUrl) {
-        const path = `${tripId}/sig_passageiro_${Date.now()}.png`
-        const storagePath = await uploadBase64(sigPassageiro.dataUrl, path)
-        await supabase.from('signatures').insert({
-          trip_id: tripId,
-          tipo: 'passageiro',
-          storage_path: storagePath,
-          signer_name: sigPassageiro.signerName ?? formData.passengers[0]?.nome ?? 'Passageiro',
-          signed_at: sigPassageiro.signedAt ?? new Date().toISOString(),
-        })
-      }
-
-      if (sigMotorista.dataUrl) {
-        const path = `${tripId}/sig_motorista_${Date.now()}.png`
-        const storagePath = await uploadBase64(sigMotorista.dataUrl, path)
-        await supabase.from('signatures').insert({
-          trip_id: tripId,
-          tipo: 'motorista',
-          storage_path: storagePath,
-          signer_name: sigMotorista.signerName ?? formData.taxista,
-          signed_at: sigMotorista.signedAt ?? new Date().toISOString(),
-        })
-      }
-
+      // Offline (ou envio direto falhou): salva localmente e deixa pendente
+      // de sincronização — nada do que foi preenchido é perdido.
+      await queueTrip({ id: tripId, protocolo, isDraft, payload: buildPendingPayload() })
+      if (draftId) removeDraftLocally(draftId)
       toast.success(
-        isDraft ? 'Rascunho salvo com sucesso!' : `Viagem enviada! Protocolo: ${protocolo}`,
+        isDraft
+          ? 'Sem conexão: rascunho salvo neste dispositivo. Será sincronizado automaticamente quando a internet voltar.'
+          : 'Sem conexão: viagem salva localmente e marcada como pendente. Será enviada para a central automaticamente quando a internet voltar.',
+        { duration: 6000 },
       )
       navigate('/trips')
     } catch (err) {
@@ -1001,6 +943,46 @@ export function NewTripPage() {
         description="Preencha todas as etapas para registrar a viagem"
       />
 
+      {!isOnline && (
+        <div className="flex items-start gap-2.5 px-4 py-3 rounded-xl bg-amber-500/10 border border-amber-500/25 text-amber-400 text-xs">
+          <WifiOff className="h-4 w-4 flex-shrink-0 mt-0.5" />
+          <div>
+            <p className="font-medium">Você está sem conexão</p>
+            <p className="text-amber-400/70 mt-0.5">
+              Pode preencher e salvar normalmente. Tudo é guardado neste aparelho e enviado
+              automaticamente para a central assim que a internet voltar.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {pendingTrips.length > 0 && (
+        <div className="rounded-xl border border-border bg-muted/20 overflow-hidden">
+          <div className="px-4 py-2.5 bg-muted/40 border-b border-border flex items-center gap-2">
+            <CloudOff className="h-3.5 w-3.5 text-muted-foreground" />
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+              Viagens pendentes de sincronização ({pendingTrips.length})
+            </p>
+          </div>
+          <div className="p-3 space-y-2">
+            {pendingTrips.map((item) => (
+              <div
+                key={item.id}
+                className="flex items-center justify-between gap-3 px-3 py-2 rounded-lg bg-secondary/40 text-xs"
+              >
+                <div className="min-w-0">
+                  <p className="font-medium text-foreground truncate">{item.protocolo}</p>
+                  <p className="text-muted-foreground">
+                    {item.isDraft ? 'Rascunho' : 'Envio para a central'}
+                  </p>
+                </div>
+                <PendingStatusChip status={item.status} onRetry={() => retrySync(item.id)} />
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="glass-card p-6">
         <TripStepper steps={STEPS} currentStep={step} completedSteps={completedSteps} />
 
@@ -1095,4 +1077,42 @@ function ReviewRow({ label, value, highlight }: { label: string; value: string; 
       </span>
     </div>
   )
+}
+
+function PendingStatusChip({
+  status, onRetry,
+}: { status: 'queued' | 'syncing' | 'synced' | 'error'; onRetry: () => void }) {
+  switch (status) {
+    case 'syncing':
+      return (
+        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-blue-500/15 text-blue-400 border border-blue-500/30 font-medium flex-shrink-0">
+          <Loader2 className="h-3 w-3 animate-spin" />
+          Sincronizando...
+        </span>
+      )
+    case 'error':
+      return (
+        <button
+          type="button"
+          onClick={onRetry}
+          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-red-500/15 text-red-400 border border-red-500/30 font-medium flex-shrink-0 hover:bg-red-500/25 transition-colors"
+        >
+          <RefreshCw className="h-3 w-3" />
+          Erro — tentar novamente
+        </button>
+      )
+    case 'synced':
+      return (
+        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 font-medium flex-shrink-0">
+          Enviado para a central
+        </span>
+      )
+    default:
+      return (
+        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-500/15 text-amber-400 border border-amber-500/30 font-medium flex-shrink-0">
+          <CloudOff className="h-3 w-3" />
+          Pendente de sincronização
+        </span>
+      )
+  }
 }

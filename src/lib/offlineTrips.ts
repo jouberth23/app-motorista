@@ -1,0 +1,122 @@
+// Fila local de viagens pendentes de sincronização (PWA/offline).
+// Usa IndexedDB em vez de localStorage porque precisamos guardar Blobs
+// (fotos e assinaturas) — localStorage só aceita strings e tem limite baixo.
+
+export type PendingTripStatus = 'queued' | 'syncing' | 'synced' | 'error'
+
+export interface PendingPhotoData {
+  originalBlob?: Blob
+  stampedBlob?: Blob
+  capturedAt?: string
+  latitude?: number
+  longitude?: number
+  accuracy?: number
+  address?: string
+  locationDenied?: boolean
+}
+
+export interface PendingSignatureData {
+  dataUrl: string
+  signerName?: string
+  method?: string
+  signedAt?: string
+}
+
+export interface PendingTripPayload {
+  formData: Record<string, unknown>
+  totalKm: number | null
+  photoKmInicial?: PendingPhotoData
+  photoKmFinal?: PendingPhotoData
+  sigPassageiro?: PendingSignatureData
+  sigMotorista?: PendingSignatureData
+}
+
+export interface PendingTripRecord {
+  id: string
+  driverId: string
+  protocolo: string
+  isDraft: boolean
+  status: PendingTripStatus
+  error?: string
+  createdAt: number
+  updatedAt: number
+  payload: PendingTripPayload
+}
+
+const DB_NAME = 'tv_offline_trips'
+const DB_VERSION = 1
+const STORE = 'pending_trips'
+
+let dbPromise: Promise<IDBDatabase> | null = null
+
+function openDb(): Promise<IDBDatabase> {
+  if (typeof indexedDB === 'undefined') {
+    return Promise.reject(new Error('IndexedDB indisponível'))
+  }
+  if (!dbPromise) {
+    dbPromise = new Promise((resolve, reject) => {
+      const req = indexedDB.open(DB_NAME, DB_VERSION)
+      req.onupgradeneeded = () => {
+        const db = req.result
+        if (!db.objectStoreNames.contains(STORE)) {
+          const store = db.createObjectStore(STORE, { keyPath: 'id' })
+          store.createIndex('driverId', 'driverId', { unique: false })
+        }
+      }
+      req.onsuccess = () => resolve(req.result)
+      req.onerror = () => reject(req.error)
+    })
+  }
+  return dbPromise
+}
+
+async function withStore<T>(mode: IDBTransactionMode, fn: (store: IDBObjectStore) => IDBRequest<T>): Promise<T> {
+  const db = await openDb()
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE, mode)
+    const store = tx.objectStore(STORE)
+    const req = fn(store)
+    req.onsuccess = () => resolve(req.result)
+    req.onerror = () => reject(req.error)
+  })
+}
+
+export async function enqueuePendingTrip(record: PendingTripRecord): Promise<void> {
+  await withStore('readwrite', (store) => store.put(record))
+}
+
+export async function listPendingTrips(driverId: string): Promise<PendingTripRecord[]> {
+  try {
+    const db = await openDb()
+    return await new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE, 'readonly')
+      const index = tx.objectStore(STORE).index('driverId')
+      const req = index.getAll(IDBKeyRange.only(driverId))
+      req.onsuccess = () => resolve((req.result as PendingTripRecord[]) ?? [])
+      req.onerror = () => reject(req.error)
+    })
+  } catch {
+    return []
+  }
+}
+
+export async function getPendingTrip(id: string): Promise<PendingTripRecord | undefined> {
+  return withStore('readonly', (store) => store.get(id))
+}
+
+export async function updatePendingTripStatus(
+  id: string,
+  status: PendingTripStatus,
+  error?: string,
+): Promise<void> {
+  const record = await getPendingTrip(id)
+  if (!record) return
+  record.status = status
+  record.error = error
+  record.updatedAt = Date.now()
+  await enqueuePendingTrip(record)
+}
+
+export async function deletePendingTrip(id: string): Promise<void> {
+  await withStore('readwrite', (store) => store.delete(id))
+}

@@ -9,6 +9,10 @@ import {
   MapPin,
   Clock,
   Gauge,
+  WifiOff,
+  CloudOff,
+  RefreshCw,
+  Loader2,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -24,6 +28,7 @@ import { PageHeader } from '@/components/common/PageHeader'
 import { TripCardSkeleton } from '@/components/common/LoadingSkeleton'
 import { EmptyState } from '@/components/common/EmptyState'
 import { useTrips } from '@/hooks/useTrips'
+import { useTripSync } from '@/hooks/useTripSync'
 import { useAuthContext } from '@/contexts/AuthContext'
 import { useRole } from '@/hooks/useRole'
 import { formatDate, formatTime } from '@/lib/utils'
@@ -98,11 +103,75 @@ function TripCard({ trip }: { trip: Trip }) {
   )
 }
 
+function statusLabel(status: 'queued' | 'syncing' | 'synced' | 'error'): string {
+  switch (status) {
+    case 'syncing': return 'Sincronizando...'
+    case 'error': return 'Erro ao sincronizar — toque para tentar novamente'
+    case 'synced': return 'Enviado para a central'
+    default: return 'Pendente de sincronização'
+  }
+}
+
+function PendingSyncSection({
+  items, onRetry,
+}: {
+  items: { id: string; protocolo: string; isDraft: boolean; status: 'queued' | 'syncing' | 'synced' | 'error' }[]
+  onRetry: (id: string) => void
+}) {
+  if (items.length === 0) return null
+  return (
+    <div className="rounded-xl border border-amber-500/25 bg-amber-500/5 overflow-hidden">
+      <div className="px-4 py-2.5 border-b border-amber-500/20 flex items-center gap-2">
+        <CloudOff className="h-3.5 w-3.5 text-amber-400" />
+        <p className="text-xs font-semibold text-amber-400 uppercase tracking-wider">
+          Salvas neste dispositivo, aguardando sincronização ({items.length})
+        </p>
+      </div>
+      <div className="p-3 space-y-2">
+        {items.map((item) => (
+          <div
+            key={item.id}
+            className="flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg bg-background/40 text-xs"
+          >
+            <div className="min-w-0">
+              <p className="font-medium text-foreground truncate">{item.protocolo}</p>
+              <p className="text-muted-foreground">
+                {item.isDraft ? 'Rascunho salvo offline' : 'Envio para a central salvo offline'}
+              </p>
+            </div>
+            {item.status === 'syncing' ? (
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-blue-500/15 text-blue-400 border border-blue-500/30 font-medium flex-shrink-0">
+                <Loader2 className="h-3 w-3 animate-spin" />
+                {statusLabel(item.status)}
+              </span>
+            ) : item.status === 'error' ? (
+              <button
+                type="button"
+                onClick={() => onRetry(item.id)}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-red-500/15 text-red-400 border border-red-500/30 font-medium flex-shrink-0 hover:bg-red-500/25 transition-colors"
+              >
+                <RefreshCw className="h-3 w-3" />
+                {statusLabel(item.status)}
+              </button>
+            ) : (
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-500/15 text-amber-400 border border-amber-500/30 font-medium flex-shrink-0">
+                <CloudOff className="h-3 w-3" />
+                {statusLabel(item.status)}
+              </span>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 export function TripsPage() {
   const { user, role, loading: authLoading } = useAuthContext()
   const { isMotorista } = useRole(role)
   const ready = !authLoading && !!user && !!role
-  const { trips, loading: tripsLoading } = useTrips(isMotorista ? user?.id : undefined, { enabled: ready })
+  const { trips, loading: tripsLoading, error: tripsError, fromCache } = useTrips(isMotorista ? user?.id : undefined, { enabled: ready })
+  const { pendingTrips, retry: retrySync } = useTripSync(isMotorista ? user?.id : undefined)
   const loading = !ready || tripsLoading
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<TripStatus | 'all'>('all')
@@ -135,6 +204,22 @@ export function TripsPage() {
           ) : undefined
         }
       />
+
+      {/* Viagens salvas localmente aguardando envio para a central */}
+      {isMotorista && <PendingSyncSection items={pendingTrips} onRetry={retrySync} />}
+
+      {/* Aviso de modo offline / falha de rede */}
+      {!loading && tripsError && (
+        <div className="flex items-start gap-2.5 px-4 py-3 rounded-xl bg-amber-500/10 border border-amber-500/25 text-amber-400 text-xs">
+          <WifiOff className="h-4 w-4 flex-shrink-0 mt-0.5" />
+          <div className="space-y-0.5">
+            <p>Sem conexão. Não foi possível atualizar as viagens agora.</p>
+            {fromCache && trips.length > 0 && (
+              <p className="text-amber-400/70">Mostrando dados salvos no dispositivo</p>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Filters */}
       <div className="flex flex-col sm:flex-row gap-3">
@@ -181,27 +266,35 @@ export function TripsPage() {
           ))}
         </div>
       ) : filtered.length === 0 ? (
-        <EmptyState
-          icon={Car}
-          title="Nenhuma viagem encontrada"
-          description={
-            search || statusFilter !== 'all'
-              ? 'Tente ajustar os filtros'
-              : isMotorista
-              ? 'Registre sua primeira viagem'
-              : 'Nenhuma viagem registrada ainda'
-          }
-          action={
-            isMotorista && !search ? (
-              <Button asChild>
-                <Link to="/trips/new">
-                  <PlusCircle className="h-4 w-4" />
-                  Nova Viagem
-                </Link>
-              </Button>
-            ) : undefined
-          }
-        />
+        tripsError && trips.length === 0 ? (
+          <EmptyState
+            icon={WifiOff}
+            title="Sem conexão"
+            description="Sem conexão. Nenhuma viagem salva neste dispositivo ainda."
+          />
+        ) : (
+          <EmptyState
+            icon={Car}
+            title="Nenhuma viagem encontrada"
+            description={
+              search || statusFilter !== 'all'
+                ? 'Tente ajustar os filtros'
+                : isMotorista
+                ? 'Registre sua primeira viagem'
+                : 'Nenhuma viagem registrada ainda'
+            }
+            action={
+              isMotorista && !search ? (
+                <Button asChild>
+                  <Link to="/trips/new">
+                    <PlusCircle className="h-4 w-4" />
+                    Nova Viagem
+                  </Link>
+                </Button>
+              ) : undefined
+            }
+          />
+        )
       ) : (
         <div className="space-y-3">
           {filtered.map((trip) => (

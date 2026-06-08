@@ -5,10 +5,31 @@ import type { Trip } from '@/types/trip'
 import type { TripStatus } from '@/types/enums'
 import { toast } from 'sonner'
 
+const TRIPS_CACHE_PREFIX = 'tv_trips_cache_'
+
+function saveTripsCache(driverId: string, trips: Trip[]) {
+  try {
+    localStorage.setItem(TRIPS_CACHE_PREFIX + driverId, JSON.stringify(trips))
+  } catch {
+    // ignore quota errors
+  }
+}
+
+function readTripsCache(driverId: string): Trip[] | null {
+  try {
+    const raw = localStorage.getItem(TRIPS_CACHE_PREFIX + driverId)
+    return raw ? (JSON.parse(raw) as Trip[]) : null
+  } catch {
+    return null
+  }
+}
+
 export function useTrips(driverId?: string, options?: { enabled?: boolean }) {
   const enabled = options?.enabled ?? true
   const [trips, setTrips] = useState<Trip[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(false)
+  const [fromCache, setFromCache] = useState(false)
 
   const fetchTrips = useCallback(async () => {
     setLoading(true)
@@ -28,11 +49,28 @@ export function useTrips(driverId?: string, options?: { enabled?: boolean }) {
         query = query.eq('driver_id', driverId)
       }
 
-      const { data, error } = await query
-      if (error) throw error
-      setTrips((data as Trip[]) ?? [])
+      const { data, error: fetchError } = await query
+      if (fetchError) throw fetchError
+      const result = (data as Trip[]) ?? []
+      setTrips(result)
+      setError(false)
+      setFromCache(false)
+      if (driverId) saveTripsCache(driverId, result)
     } catch (err) {
       console.error('Error fetching trips:', err)
+      setError(true)
+      if (driverId) {
+        const cached = readTripsCache(driverId)
+        if (cached) {
+          setTrips(cached)
+          setFromCache(true)
+        } else {
+          setTrips([])
+          setFromCache(false)
+        }
+      } else {
+        setFromCache(false)
+      }
     } finally {
       setLoading(false)
     }
@@ -43,13 +81,15 @@ export function useTrips(driverId?: string, options?: { enabled?: boolean }) {
   useEffect(() => {
     setTrips([])
     setLoading(true)
+    setError(false)
+    setFromCache(false)
   }, [driverId])
 
   useEffect(() => {
     if (enabled) fetchTrips()
   }, [fetchTrips, enabled])
 
-  return { trips, loading: enabled ? loading : true, refetch: fetchTrips }
+  return { trips, loading: enabled ? loading : true, error, fromCache, refetch: fetchTrips }
 }
 
 export function useTripsByStatus(status?: TripStatus) {

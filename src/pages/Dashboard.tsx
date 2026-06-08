@@ -11,6 +11,7 @@ import {
   TrendingUp,
   DollarSign,
   AlertCircle,
+  WifiOff,
 } from 'lucide-react'
 import {
   AreaChart,
@@ -96,7 +97,7 @@ export function DashboardPage() {
   const { user, profile, role, loading: authLoading } = useAuthContext()
   const { isMotorista, isCentral } = useRole(role)
   const ready = !authLoading && !!user && !!role
-  const { trips, loading: tripsLoading } = useTrips(isMotorista ? user?.id : undefined, { enabled: ready })
+  const { trips, loading: tripsLoading, error: tripsError, fromCache } = useTrips(isMotorista ? user?.id : undefined, { enabled: ready })
   const loading = !ready || tripsLoading
 
   const stats = useMemo(() => {
@@ -148,6 +149,19 @@ export function DashboardPage() {
           ) : undefined
         }
       />
+
+      {/* Aviso de modo offline / falha de rede */}
+      {tripsError && (
+        <div className="flex items-start gap-2.5 px-4 py-3 rounded-xl bg-amber-500/10 border border-amber-500/25 text-amber-400 text-xs">
+          <WifiOff className="h-4 w-4 flex-shrink-0 mt-0.5" />
+          <div className="space-y-0.5">
+            <p>Sem conexão. Não foi possível atualizar as viagens agora.</p>
+            {fromCache && trips.length > 0 && (
+              <p className="text-amber-400/70">Mostrando dados salvos no dispositivo</p>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Stats grid */}
       <motion.div
@@ -293,25 +307,33 @@ export function DashboardPage() {
           </div>
 
           {recentTrips.length === 0 ? (
-            <EmptyState
-              icon={Car}
-              title="Nenhuma viagem ainda"
-              description={
-                isMotorista
-                  ? 'Crie sua primeira viagem clicando em Nova Viagem'
-                  : 'Nenhuma viagem registrada ainda'
-              }
-              action={
-                isMotorista ? (
-                  <Button asChild>
-                    <Link to="/trips/new">
-                      <PlusCircle className="h-4 w-4" />
-                      Nova Viagem
-                    </Link>
-                  </Button>
-                ) : undefined
-              }
-            />
+            tripsError ? (
+              <EmptyState
+                icon={WifiOff}
+                title="Sem conexão"
+                description="Sem conexão. Nenhuma viagem salva neste dispositivo ainda."
+              />
+            ) : (
+              <EmptyState
+                icon={Car}
+                title="Nenhuma viagem ainda"
+                description={
+                  isMotorista
+                    ? 'Crie sua primeira viagem clicando em Nova Viagem'
+                    : 'Nenhuma viagem registrada ainda'
+                }
+                action={
+                  isMotorista ? (
+                    <Button asChild>
+                      <Link to="/trips/new">
+                        <PlusCircle className="h-4 w-4" />
+                        Nova Viagem
+                      </Link>
+                    </Button>
+                  ) : undefined
+                }
+              />
+            )
           ) : (
             <div className="px-3 pb-4">
               {recentTrips.map((trip) => (
