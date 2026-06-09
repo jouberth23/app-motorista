@@ -38,6 +38,20 @@ export function useTripSync(driverId: string | undefined, profileBase?: string |
         await updatePendingTripStatus(item.id, 'syncing')
         await refresh()
         try {
+          // PendingPhotoData usa originalBlob/stampedBlob; SubmitPhoto espera
+          // originalFile/stampedFile — remapar aqui para o upload funcionar.
+          const toSubmitPhoto = (p: typeof item.payload.photoKmInicial) =>
+            p ? {
+              originalFile: p.originalBlob,
+              stampedFile: p.stampedBlob,
+              capturedAt: p.capturedAt,
+              latitude: p.latitude,
+              longitude: p.longitude,
+              accuracy: p.accuracy,
+              address: p.address,
+              locationDenied: p.locationDenied,
+            } : undefined
+
           await submitTripToServer({
             tripId: item.id,
             userId: item.driverId,
@@ -46,8 +60,8 @@ export function useTripSync(driverId: string | undefined, profileBase?: string |
             formData: item.payload.formData as never,
             totalKm: item.payload.totalKm,
             profileBase,
-            photoKmInicial: item.payload.photoKmInicial,
-            photoKmFinal: item.payload.photoKmFinal,
+            photoKmInicial: toSubmitPhoto(item.payload.photoKmInicial),
+            photoKmFinal: toSubmitPhoto(item.payload.photoKmFinal),
             sigPassageiro: item.payload.sigPassageiro,
             sigMotorista: item.payload.sigMotorista,
           })
