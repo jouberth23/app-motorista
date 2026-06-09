@@ -5,6 +5,7 @@ import {
   enqueuePendingTrip,
   listPendingTrips,
   updatePendingTripStatus,
+  promoteDraftToSubmission,
   type PendingTripPayload,
   type PendingTripRecord,
 } from '@/lib/offlineTrips'
@@ -124,5 +125,11 @@ export function useTripSync(driverId: string | undefined, profileBase?: string |
     syncPendingTrips()
   }, [refresh, syncPendingTrips])
 
-  return { pendingTrips, isOnline, queueTrip, retry, syncNow: syncPendingTrips }
+  const submitDraft = useCallback(async (id: string) => {
+    await promoteDraftToSubmission(id)
+    await refresh()
+    syncPendingTrips()
+  }, [refresh, syncPendingTrips])
+
+  return { pendingTrips, isOnline, queueTrip, retry, submitDraft, syncNow: syncPendingTrips }
 }

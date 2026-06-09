@@ -194,3 +194,12 @@ export async function deletePendingTrip(id: string): Promise<void> {
     await withStore('readwrite', (store) => store.delete(id))
   } catch {}
 }
+
+export async function promoteDraftToSubmission(id: string): Promise<void> {
+  const record = await getPendingTrip(id)
+  if (!record || !record.isDraft) return
+  record.isDraft = false
+  record.status = 'queued'
+  record.updatedAt = Date.now()
+  await enqueuePendingTrip(record)
+}

@@ -13,6 +13,7 @@ import {
   CloudOff,
   RefreshCw,
   Loader2,
+  Send,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -113,10 +114,11 @@ function statusLabel(status: 'queued' | 'syncing' | 'synced' | 'error'): string 
 }
 
 function PendingSyncSection({
-  items, onRetry,
+  items, onRetry, onSubmitDraft,
 }: {
   items: { id: string; protocolo: string; isDraft: boolean; status: 'queued' | 'syncing' | 'synced' | 'error' }[]
   onRetry: (id: string) => void
+  onSubmitDraft: (id: string) => void
 }) {
   if (items.length === 0) return null
   return (
@@ -139,26 +141,38 @@ function PendingSyncSection({
                 {item.isDraft ? 'Rascunho salvo offline' : 'Envio para a central salvo offline'}
               </p>
             </div>
-            {item.status === 'syncing' ? (
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-blue-500/15 text-blue-400 border border-blue-500/30 font-medium flex-shrink-0">
-                <Loader2 className="h-3 w-3 animate-spin" />
-                {statusLabel(item.status)}
-              </span>
-            ) : item.status === 'error' ? (
-              <button
-                type="button"
-                onClick={() => onRetry(item.id)}
-                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-red-500/15 text-red-400 border border-red-500/30 font-medium flex-shrink-0 hover:bg-red-500/25 transition-colors"
-              >
-                <RefreshCw className="h-3 w-3" />
-                {statusLabel(item.status)}
-              </button>
-            ) : (
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-500/15 text-amber-400 border border-amber-500/30 font-medium flex-shrink-0">
-                <CloudOff className="h-3 w-3" />
-                {statusLabel(item.status)}
-              </span>
-            )}
+            <div className="flex items-center gap-2 flex-shrink-0">
+              {item.isDraft && item.status !== 'syncing' && item.status !== 'synced' && (
+                <button
+                  type="button"
+                  onClick={() => onSubmitDraft(item.id)}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-primary/15 text-primary border border-primary/30 font-medium hover:bg-primary/25 transition-colors"
+                >
+                  <Send className="h-3 w-3" />
+                  Enviar para Central
+                </button>
+              )}
+              {item.status === 'syncing' ? (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-blue-500/15 text-blue-400 border border-blue-500/30 font-medium">
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                  {statusLabel(item.status)}
+                </span>
+              ) : item.status === 'error' ? (
+                <button
+                  type="button"
+                  onClick={() => onRetry(item.id)}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-red-500/15 text-red-400 border border-red-500/30 font-medium hover:bg-red-500/25 transition-colors"
+                >
+                  <RefreshCw className="h-3 w-3" />
+                  {statusLabel(item.status)}
+                </button>
+              ) : (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-500/15 text-amber-400 border border-amber-500/30 font-medium">
+                  <CloudOff className="h-3 w-3" />
+                  {statusLabel(item.status)}
+                </span>
+              )}
+            </div>
           </div>
         ))}
       </div>
@@ -171,7 +185,7 @@ export function TripsPage() {
   const { isMotorista } = useRole(role)
   const ready = !authLoading && !!user && !!role
   const { trips, loading: tripsLoading, error: tripsError, fromCache } = useTrips(isMotorista ? user?.id : undefined, { enabled: ready })
-  const { pendingTrips, retry: retrySync } = useTripSync(isMotorista ? user?.id : undefined)
+  const { pendingTrips, retry: retrySync, submitDraft } = useTripSync(isMotorista ? user?.id : undefined)
   const loading = !ready || tripsLoading
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<TripStatus | 'all'>('all')
@@ -206,7 +220,7 @@ export function TripsPage() {
       />
 
       {/* Viagens salvas localmente aguardando envio para a central */}
-      {isMotorista && <PendingSyncSection items={pendingTrips} onRetry={retrySync} />}
+      {isMotorista && <PendingSyncSection items={pendingTrips} onRetry={retrySync} onSubmitDraft={submitDraft} />}
 
       {/* Aviso de modo offline / falha de rede */}
       {!loading && tripsError && (
