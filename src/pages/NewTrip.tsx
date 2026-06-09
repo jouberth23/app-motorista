@@ -329,8 +329,18 @@ export function NewTripPage() {
               profileBase: profile?.base,
               photoKmInicial,
               photoKmFinal,
-              sigPassageiro,
-              sigMotorista,
+              sigPassageiro: sigPassageiro.dataUrl ? {
+                dataUrl: sigPassageiro.dataUrl,
+                signerName: sigPassageiro.signerName,
+                method: sigPassageiro.method,
+                signedAt: sigPassageiro.signedAt,
+              } : undefined,
+              sigMotorista: sigMotorista.dataUrl ? {
+                dataUrl: sigMotorista.dataUrl,
+                signerName: sigMotorista.signerName,
+                method: sigMotorista.method,
+                signedAt: sigMotorista.signedAt,
+              } : undefined,
             }),
             new Promise<never>((_, reject) =>
               setTimeout(() => reject(new Error('submit_timeout')), 8000),
