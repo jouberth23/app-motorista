@@ -88,20 +88,14 @@ interface FormState {
   passengers: { nome: string; matricula: string }[]
 }
 
-export function NewTripPage() {
-  const navigate = useNavigate()
-  const { user, profile } = useAuthContext()
-  const [step, setStep] = useState(0)
-  const [completedSteps, setCompletedSteps] = useState<number[]>([])
-  const [loading, setLoading] = useState(false)
-  const [protocolo] = useState(() => generateProtocol())
-  const [photoKmInicial, setPhotoKmInicial] = useState<PhotoState>({})
-  const [photoKmFinal, setPhotoKmFinal] = useState<PhotoState>({})
-  const [sigPassageiro, setSigPassageiro] = useState<SignatureState>({})
-  const [sigMotorista, setSigMotorista] = useState<SignatureState>({})
-  const [stepErrors, setStepErrors] = useState<Record<number, string>>({})
+interface DraftState {
+  formData: FormState
+  step: number
+  completedSteps: number[]
+}
 
-  const [formData, setFormData] = useState<FormState>({
+function buildInitialFormData(profile: { nome?: string | null; base?: string | null } | null): FormState {
+  return {
     taxista: profile?.nome ?? '',
     data: new Date().toISOString().split('T')[0],
     placa: '',
@@ -119,47 +113,75 @@ export function NewTripPage() {
     justificativa: '',
     setor: '',
     passengers: [{ nome: '', matricula: '' }],
-  })
+  }
+}
+
+export function NewTripPage() {
+  const navigate = useNavigate()
+  const { user, profile } = useAuthContext()
+  const [step, setStep] = useState(0)
+  const [completedSteps, setCompletedSteps] = useState<number[]>([])
+  const [loading, setLoading] = useState(false)
+  const [protocolo] = useState(() => generateProtocol())
+  const [photoKmInicial, setPhotoKmInicial] = useState<PhotoState>({})
+  const [photoKmFinal, setPhotoKmFinal] = useState<PhotoState>({})
+  const [sigPassageiro, setSigPassageiro] = useState<SignatureState>({})
+  const [sigMotorista, setSigMotorista] = useState<SignatureState>({})
+  const [stepErrors, setStepErrors] = useState<Record<number, string>>({})
+
+  const [formData, setFormData] = useState<FormState>(() => buildInitialFormData(profile))
 
   const { isOnline, saveDraftLocally, getDraftLocally, removeDraftLocally } = useOfflineQueue()
   const { pendingTrips, queueTrip, retry: retrySync } = useTripSync(user?.id, profile?.base)
   const draftId = user ? `new_trip_${user.id}` : null
   const [draftAutoSaveEnabled, setDraftAutoSaveEnabled] = useState(false)
 
-  // Ao abrir Nova Viagem: verifica se existe rascunho local salvo e oferece continuar/descartar
+  // Ao abrir Nova Viagem: restaura automaticamente o rascunho salvo (dados +
+  // etapa atual). Isso evita perder o progresso quando o app recarrega ao
+  // voltar de segundo plano (comum no Android) — o usuário continua de onde
+  // estava sem precisar confirmar nada. Fotos/assinaturas não entram nesse
+  // rascunho leve (Blobs não cabem no localStorage); se a etapa restaurada
+  // exigir, a validação normal pede para refazer.
   useEffect(() => {
     if (!draftId) { setDraftAutoSaveEnabled(true); return }
-    const draft = getDraftLocally(draftId) as FormState | null
-    if (!draft) {
+    const saved = getDraftLocally(draftId) as DraftState | FormState | null
+    if (!saved) {
       setDraftAutoSaveEnabled(true)
       return
     }
-    toast('Rascunho encontrado', {
-      description: 'Você tem uma viagem não enviada salva neste dispositivo. Deseja continuar de onde parou?',
-      duration: Infinity,
+    // Compat: rascunhos antigos salvavam apenas o FormState diretamente
+    const draft: DraftState = 'formData' in saved
+      ? saved
+      : { formData: saved, step: 0, completedSteps: [] }
+
+    setFormData(draft.formData)
+    setStep(Math.min(Math.max(draft.step, 0), STEPS.length - 1))
+    setCompletedSteps(draft.completedSteps ?? [])
+    setDraftAutoSaveEnabled(true)
+
+    toast('Rascunho restaurado', {
+      id: 'draft-restored',
+      description: 'Continuando de onde você parou.',
+      duration: 5000,
       action: {
-        label: 'Continuar',
-        onClick: () => {
-          setFormData(draft)
-          setDraftAutoSaveEnabled(true)
-        },
-      },
-      cancel: {
-        label: 'Descartar',
+        label: 'Começar do zero',
         onClick: () => {
           removeDraftLocally(draftId)
-          setDraftAutoSaveEnabled(true)
+          setFormData(buildInitialFormData(profile))
+          setStep(0)
+          setCompletedSteps([])
         },
       },
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Salva o rascunho local automaticamente conforme o formulário é preenchido
+  // Salva o rascunho local automaticamente (dados + etapa atual) conforme o
+  // formulário é preenchido — permite restaurar o progresso caso o app recarregue.
   useEffect(() => {
     if (!draftId || !draftAutoSaveEnabled) return
-    saveDraftLocally(draftId, formData)
-  }, [draftId, draftAutoSaveEnabled, formData, saveDraftLocally])
+    saveDraftLocally(draftId, { formData, step, completedSteps })
+  }, [draftId, draftAutoSaveEnabled, formData, step, completedSteps, saveDraftLocally])
 
   const totalKm = (() => {
     const ini = parseFloat(formData.km_inicial)

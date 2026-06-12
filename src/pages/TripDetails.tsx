@@ -22,6 +22,7 @@ import { ConfirmDialog } from '@/components/common/ConfirmDialog'
 import { useAuthContext } from '@/contexts/AuthContext'
 import { useRole } from '@/hooks/useRole'
 import { useTripActions } from '@/hooks/useTrips'
+import { useOfflineQueue } from '@/hooks/useOfflineQueue'
 import { logAudit } from '@/lib/audit'
 import { supabase } from '@/lib/supabase'
 import { formatDate, formatTime, formatCurrency, formatDateTime } from '@/lib/utils'
@@ -180,14 +181,46 @@ export function TripDetailsPage() {
   const [editForm, setEditForm] = useState<EditFormState | null>(null)
   const [saving, setSaving] = useState(false)
 
+  const { saveDraftLocally, getDraftLocally, removeDraftLocally } = useOfflineQueue()
+
   // Auto-generate PDF when approved (either from this page's action or from navigation state)
   const shouldAutoGenPDF = useRef(!!navState?.autoGeneratePDF)
+
+  const canApproveOrReject =
+    !!trip && isCentral && (trip.status === 'enviado' || trip.status === 'pendente')
+  const reviewDraftId = id ? `trip_review_${id}` : null
+  const draftRestoredRef = useRef(false)
 
   useEffect(() => {
     if (!id) return
     fetchTrip()
     fetchAuditLogs()
   }, [id])
+
+  // Restaura valor/motivo digitados se o app recarregou no meio da revisão
+  useEffect(() => {
+    if (!canApproveOrReject || draftRestoredRef.current || !reviewDraftId) return
+    draftRestoredRef.current = true
+    const draft = getDraftLocally(reviewDraftId) as {
+      valorTotal?: string
+      motivoRecusa?: string
+      motivoCorrecao?: string
+    } | null
+    if (!draft) return
+    if (draft.valorTotal) setValorTotal(draft.valorTotal)
+    if (draft.motivoRecusa) setMotivoRecusa(draft.motivoRecusa)
+    if (draft.motivoCorrecao) setMotivoCorrecao(draft.motivoCorrecao)
+  }, [canApproveOrReject, reviewDraftId, getDraftLocally])
+
+  // Salva o que foi digitado para não perder se o app recarregar
+  useEffect(() => {
+    if (!canApproveOrReject || !reviewDraftId) return
+    if (!valorTotal && !motivoRecusa && !motivoCorrecao) {
+      removeDraftLocally(reviewDraftId)
+      return
+    }
+    saveDraftLocally(reviewDraftId, { valorTotal, motivoRecusa, motivoCorrecao })
+  }, [canApproveOrReject, reviewDraftId, valorTotal, motivoRecusa, motivoCorrecao, saveDraftLocally, removeDraftLocally])
 
   const fetchTrip = async () => {
     setLoading(true)
@@ -264,6 +297,7 @@ export function TripDetailsPage() {
       await approveTrip(trip!.id, valor, user!.id)
       setShowApproveDialog(false)
       shouldAutoGenPDF.current = true
+      if (reviewDraftId) removeDraftLocally(reviewDraftId)
       fetchTrip()
       fetchAuditLogs()
     } finally {
@@ -282,6 +316,7 @@ export function TripDetailsPage() {
       setShowRejectDialog(false)
       setMotivoRecusa('')
       shouldAutoGenPDF.current = true
+      if (reviewDraftId) removeDraftLocally(reviewDraftId)
       fetchTrip()
       fetchAuditLogs()
     } finally {
@@ -299,6 +334,7 @@ export function TripDetailsPage() {
       await requestCorrection(trip!.id, motivoCorrecao, user!.id)
       setShowCorrectionDialog(false)
       setMotivoCorrecao('')
+      if (reviewDraftId) removeDraftLocally(reviewDraftId)
       fetchTrip()
       fetchAuditLogs()
     } finally {
@@ -434,8 +470,6 @@ export function TripDetailsPage() {
 
   if (!trip) return null
 
-  const canApproveOrReject =
-    isCentral && (trip.status === 'enviado' || trip.status === 'pendente')
   const canResubmit = isMotorista && trip.status === 'correcao'
   const timeline = buildTimeline(trip, auditLogs)
   const pdfPublicUrl = trip.pdf_path

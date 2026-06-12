@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
@@ -16,6 +16,7 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { useTrips, useTripActions } from '@/hooks/useTrips'
 import { useAuthContext } from '@/contexts/AuthContext'
+import { useOfflineQueue } from '@/hooks/useOfflineQueue'
 import { generateTripPDFBlob, saveTripPDF } from '@/services/pdf'
 import { formatDate, formatCurrency } from '@/lib/utils'
 import { cn } from '@/lib/utils'
@@ -38,6 +39,38 @@ function QueueCard({ trip, onProcessed }: { trip: Trip; onProcessed: () => void 
   const [motivo, setMotivo] = useState('')
   const [loading, setLoading] = useState(false)
 
+  const { saveDraftLocally, getDraftLocally, removeDraftLocally } = useOfflineQueue()
+  const draftId = `queue_review_${trip.id}`
+  const draftRestoredRef = useRef(false)
+
+  // Restaura valor/motivo digitados se o app recarregou no meio da revisão
+  useEffect(() => {
+    if (draftRestoredRef.current) return
+    draftRestoredRef.current = true
+    const draft = getDraftLocally(draftId) as {
+      valor?: string
+      motivo?: string
+      mode?: ActionMode
+      expanded?: boolean
+    } | null
+    if (!draft) return
+    if (draft.valor) setValor(draft.valor)
+    if (draft.motivo) setMotivo(draft.motivo)
+    if (draft.mode) setMode(draft.mode)
+    if (draft.expanded) setExpanded(true)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Salva o que foi digitado para não perder se o app recarregar
+  useEffect(() => {
+    if (!draftRestoredRef.current) return
+    if (!valor && !motivo && mode === 'idle' && !expanded) {
+      removeDraftLocally(draftId)
+      return
+    }
+    saveDraftLocally(draftId, { valor, motivo, mode, expanded })
+  }, [draftId, valor, motivo, mode, expanded, saveDraftLocally, removeDraftLocally])
+
   const switchMode = (next: ActionMode) => {
     setMode((prev) => (prev === next ? 'idle' : next))
     setMotivo('')
@@ -49,6 +82,7 @@ function QueueCard({ trip, onProcessed }: { trip: Trip; onProcessed: () => void 
     setLoading(true)
     try {
       await approveTrip(trip.id, v, user!.id)
+      removeDraftLocally(draftId)
       // Navigate to TripDetails — it will auto-generate the full PDF (with photos/sigs)
       navigate(`/trips/${trip.id}`, { state: { autoGeneratePDF: true } })
     } catch {
@@ -70,6 +104,7 @@ function QueueCard({ trip, onProcessed }: { trip: Trip; onProcessed: () => void 
         toast.success('Viagem recusada')
         toast.warning('PDF não pôde ser salvo automaticamente — gere na tela da viagem')
       }
+      removeDraftLocally(draftId)
       onProcessed()
     } catch {
       setLoading(false)
@@ -81,6 +116,7 @@ function QueueCard({ trip, onProcessed }: { trip: Trip; onProcessed: () => void 
     setLoading(true)
     try {
       await requestCorrection(trip.id, motivo, user!.id)
+      removeDraftLocally(draftId)
       onProcessed()
     } catch {
       setLoading(false)
