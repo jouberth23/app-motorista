@@ -29,7 +29,7 @@ import { formatDate, formatTime, formatCurrency, formatDateTime, formatVoucherLa
 import { cn } from '@/lib/utils'
 import type { Trip, AuditLog, TripExpense } from '@/types/trip'
 import type { TripType } from '@/types/enums'
-import { SETORES, BASES } from '@/types/enums'
+import { SETORES } from '@/types/enums'
 import { TRIP_TYPE_LABELS } from '@/lib/constants'
 import { generateTripPDF, saveTripPDF } from '@/services/pdf'
 import { SendWhatsappDialog } from '@/components/trips/SendWhatsappDialog'
@@ -439,6 +439,19 @@ export function TripDetailsPage() {
 
     setSaving(true)
     try {
+      for (const [photoId, replacement] of Object.entries(editForm.photoFiles)) {
+        if (!replacement) continue
+        const photo = trip!.photos?.find((p) => p.id === photoId)
+        if (!photo) continue
+        const ext = replacement.file.name.split('.').pop() ?? 'jpg'
+        const path = `${trip!.id}/${photo.tipo}-${Date.now()}.${ext}`
+        const { error: uploadError } = await supabase.storage
+          .from('trip-photos')
+          .upload(path, replacement.file, { upsert: true })
+        if (uploadError) { toast.error('Erro ao enviar foto'); throw uploadError }
+        await supabase.from('photos').update({ storage_path: path }).eq('id', photoId)
+      }
+
       await correctTrip(
         trip!.id,
         {
@@ -464,6 +477,7 @@ export function TripDetailsPage() {
         user!.id,
       )
       setShowEditDialog(false)
+      Object.values(editForm.photoFiles).forEach((pf) => { if (pf) URL.revokeObjectURL(pf.previewUrl) })
       fetchTrip()
       fetchAuditLogs()
     } finally {
@@ -706,7 +720,6 @@ export function TripDetailsPage() {
           <DetailGrid>
             <DetailItem label="Taxista" value={trip.driver_name ?? '-'} />
             <DetailItem label="Placa" value={trip.placa} />
-            <DetailItem label="Base" value={trip.base} />
             <DetailItem label="Data" value={formatDate(trip.data)} />
             <DetailItem label="Tipo de Viagem" value={TRIP_TYPE_LABELS[trip.tipo_viagem]} />
             <DetailItem label="Setor" value={trip.setor} />
@@ -988,15 +1001,6 @@ export function TripDetailsPage() {
                     />
                   </div>
                   <div className="space-y-1.5">
-                    <Label className="text-xs">Base</Label>
-                    <Select value={editForm.base} onValueChange={(v) => setEditForm((f) => f ? { ...f, base: v } : f)}>
-                      <SelectTrigger><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        {BASES.map((b) => <SelectItem key={b} value={b}>{b}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-1.5">
                     <Label className="text-xs">Tipo de Viagem</Label>
                     <Select value={editForm.tipo_viagem} onValueChange={(v) => setEditForm((f) => f ? { ...f, tipo_viagem: v } : f)}>
                       <SelectTrigger><SelectValue /></SelectTrigger>
@@ -1135,7 +1139,7 @@ export function TripDetailsPage() {
               </div>
 
               {/* Fotos da Quilometragem */}
-              {isMotorista && trip.photos && trip.photos.length > 0 && (
+              {(isMotorista || isCentral) && trip.photos && trip.photos.length > 0 && (
                 <div className="space-y-3">
                   <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Fotos da Quilometragem</p>
                   <div className="grid grid-cols-2 gap-4">
