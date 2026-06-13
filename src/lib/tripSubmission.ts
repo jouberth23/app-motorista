@@ -26,6 +26,7 @@ interface SubmitFormData {
   justificativa: string
   setor: string
   passengers: { nome: string; matricula: string }[]
+  expenses: { tipo: string; valor: string; observacao: string }[]
 }
 
 interface SubmitPhoto {
@@ -246,6 +247,22 @@ export async function submitTripToServer(input: TripSubmissionInput): Promise<vo
       })),
     )
     if (passengerError) throw passengerError
+  }
+
+  // Idempotência das despesas: substitui a lista inteira a cada tentativa.
+  const validExpenses = formData.expenses.filter((e) => e.tipo && parseFloat(e.valor) > 0)
+  await supabase.from('trip_expenses').delete().eq('trip_id', tripId)
+  if (validExpenses.length > 0) {
+    const { error: expenseError } = await supabase.from('trip_expenses').insert(
+      validExpenses.map((e) => ({
+        trip_id: tripId,
+        driver_id: userId,
+        tipo: e.tipo,
+        valor: parseFloat(e.valor),
+        observacao: e.observacao || null,
+      })),
+    )
+    if (expenseError) throw expenseError
   }
 
   await submitPhoto(photoKmInicial, 'km_inicial', tripId, userId)

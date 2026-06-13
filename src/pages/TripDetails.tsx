@@ -5,7 +5,7 @@ import {
   ArrowLeft, Car, Clock, MapPin, User, Camera, PenLine, Lock,
   CheckCircle2, XCircle, AlertTriangle, FileText, DollarSign,
   Loader2, Download, Send, FileCheck2, History,
-  FilePlus2, Pencil, MessageCircle, Plus, Trash2,
+  FilePlus2, Pencil, MessageCircle, Plus, Trash2, Receipt,
 } from 'lucide-react'
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
@@ -25,9 +25,9 @@ import { useTripActions } from '@/hooks/useTrips'
 import { useOfflineQueue } from '@/hooks/useOfflineQueue'
 import { logAudit } from '@/lib/audit'
 import { supabase } from '@/lib/supabase'
-import { formatDate, formatTime, formatCurrency, formatDateTime } from '@/lib/utils'
+import { formatDate, formatTime, formatCurrency, formatDateTime, formatVoucherLabel } from '@/lib/utils'
 import { cn } from '@/lib/utils'
-import type { Trip, AuditLog } from '@/types/trip'
+import type { Trip, AuditLog, TripExpense } from '@/types/trip'
 import type { TripType } from '@/types/enums'
 import { SETORES, BASES } from '@/types/enums'
 import { TRIP_TYPE_LABELS } from '@/lib/constants'
@@ -43,6 +43,7 @@ const ACTION_LABELS: Record<string, string> = {
   REJECT: 'Recusado',
   CORRECAO_SOLICITADA: 'Correção solicitada',
   CORRECAO_ENVIADA: 'Correção enviada',
+  CORRECAO_CENTRAL: 'Correção pela central',
   PDF_GERADO: 'PDF gerado',
   WHATSAPP_SENT: 'PDF enviado por WhatsApp',
   INSERT: 'Criado',
@@ -158,9 +159,10 @@ export function TripDetailsPage() {
   const { state: navState } = useLocation()
   const { user, role } = useAuthContext()
   const { isMotorista, isCentral } = useRole(role)
-  const { approveTrip, rejectTrip, requestCorrection, submitTrip, updateAndResubmitTrip } = useTripActions()
+  const { approveTrip, rejectTrip, requestCorrection, submitTrip, updateAndResubmitTrip, correctTrip } = useTripActions()
 
   const [trip, setTrip] = useState<Trip | null>(null)
+  const [expenses, setExpenses] = useState<TripExpense[]>([])
   const [loading, setLoading] = useState(true)
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([])
   const [valorTotal, setValorTotal] = useState('')
@@ -254,6 +256,12 @@ export function TripDetailsPage() {
         if (urlData?.signedUrl) sigMap[sig.id] = urlData.signedUrl
       }
       setSigUrls(sigMap)
+
+      const { data: expensesData } = await supabase
+        .from('trip_expenses')
+        .select('*')
+        .eq('trip_id', id!)
+      setExpenses((expensesData as TripExpense[]) ?? [])
     } catch {
       toast.error('Erro ao carregar viagem')
       navigate('/trips')
@@ -416,6 +424,53 @@ export function TripDetailsPage() {
     }
   }
 
+  const handleSaveCorrection = async () => {
+    if (!editForm) return
+    const kmI = parseFloat(editForm.km_inicial)
+    const kmF = parseFloat(editForm.km_final)
+    if (!editForm.placa.trim()) { toast.error('Informe a placa'); return }
+    if (!editForm.data) { toast.error('Informe a data'); return }
+    if (isNaN(kmI) || isNaN(kmF)) { toast.error('KMs inválidos'); return }
+    if (kmF < kmI) { toast.error('KM final deve ser maior ou igual ao inicial'); return }
+    if (editForm.passengers.some((p) => !p.nome.trim())) {
+      toast.error('Preencha o nome de todos os passageiros')
+      return
+    }
+
+    setSaving(true)
+    try {
+      await correctTrip(
+        trip!.id,
+        {
+          data: editForm.data,
+          placa: editForm.placa.trim().toUpperCase(),
+          base: editForm.base,
+          tipo_viagem: editForm.tipo_viagem as TripType,
+          hora_inicial: editForm.hora_inicial,
+          hora_final: editForm.hora_final,
+          hora_parada: editForm.hora_parada || null,
+          km_inicial: kmI,
+          km_final: kmF,
+          total_km: kmF - kmI,
+          inicio_base: editForm.inicio_base,
+          final_base: editForm.final_base,
+          embarque_empregado: editForm.embarque_empregado,
+          desembarque_empregado: editForm.desembarque_empregado,
+          descricao_viagem: editForm.justificativa,
+          justificativa: editForm.justificativa,
+          setor: editForm.setor,
+        },
+        editForm.passengers.filter((p) => p.nome.trim()),
+        user!.id,
+      )
+      setShowEditDialog(false)
+      fetchTrip()
+      fetchAuditLogs()
+    } finally {
+      setSaving(false)
+    }
+  }
+
   const handleGeneratePDF = async (currentTrip?: Trip) => {
     const t = currentTrip ?? trip
     if (!t) return
@@ -470,7 +525,7 @@ export function TripDetailsPage() {
 
   if (!trip) return null
 
-  const canResubmit = isMotorista && trip.status === 'correcao'
+  const canResubmit = isMotorista && (trip.status === 'correcao' || trip.status === 'aprovado' || trip.status === 'recusado')
   const timeline = buildTimeline(trip, auditLogs)
   const pdfPublicUrl = trip.pdf_path
     ? supabase.storage.from('trip-documents').getPublicUrl(trip.pdf_path).data.publicUrl
@@ -488,7 +543,7 @@ export function TripDetailsPage() {
         </button>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-3 flex-wrap">
-            <h1 className="font-display text-xl font-semibold">{trip.protocolo}</h1>
+            <h1 className="font-display text-xl font-semibold">{formatVoucherLabel(trip)}</h1>
             <StatusBadge status={trip.status} />
             {trip.pdf_path && (
               <span className="flex items-center gap-1 text-xs text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full">
@@ -505,6 +560,14 @@ export function TripDetailsPage() {
         {/* PDF + WhatsApp buttons — only for supervisor / admin */}
         {isCentral && (
           <div className="flex gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => { setEditForm(initEditForm(trip)); setShowEditDialog(true) }}
+            >
+              <Pencil className="h-4 w-4" />
+              <span className="hidden sm:inline">Corrigir</span>
+            </Button>
             {pdfPublicUrl && (
               <Button variant="outline" size="sm" asChild>
                 <a href={pdfPublicUrl} target="_blank" rel="noopener noreferrer">
@@ -566,6 +629,27 @@ export function TripDetailsPage() {
               Corrigir e Reenviar
             </Button>
           )}
+        </div>
+      )}
+
+      {/* Motorista pode corrigir viagem já analisada (aprovada ou recusada) */}
+      {canResubmit && trip.status !== 'correcao' && (
+        <div className="p-4 rounded-xl bg-orange-500/10 border border-orange-500/30 flex items-start gap-3">
+          <AlertTriangle className="h-5 w-5 text-orange-400 flex-shrink-0 mt-0.5" />
+          <div className="flex-1">
+            <p className="text-sm font-semibold text-orange-400">Viagem já analisada</p>
+            <p className="text-sm text-muted-foreground mt-0.5">
+              Identificou um erro? Corrija os dados e a viagem voltará para análise da central.
+            </p>
+          </div>
+          <Button
+            size="sm"
+            onClick={() => { setEditForm(initEditForm(trip)); setShowEditDialog(true) }}
+            className="flex-shrink-0 bg-orange-500 hover:bg-orange-600 text-white"
+          >
+            <Pencil className="h-4 w-4" />
+            Corrigir Viagem
+          </Button>
         </div>
       )}
 
@@ -639,6 +723,32 @@ export function TripDetailsPage() {
             <DetailItem label="Total KM" value={trip.total_km ? `${trip.total_km} km` : '-'} highlight />
           </DetailGrid>
         </DetailSection>
+
+        {expenses.length > 0 && (
+          <DetailSection title="Despesas" icon={Receipt}>
+            <div className="space-y-2">
+              {expenses.map((e) => (
+                <div key={e.id} className="flex items-center justify-between gap-3 p-3 rounded-lg bg-muted/20">
+                  <div>
+                    <p className="text-sm font-medium">{e.tipo}</p>
+                    {e.observacao && (
+                      <p className="text-xs text-muted-foreground">{e.observacao}</p>
+                    )}
+                  </div>
+                  <p className="text-sm font-semibold text-emerald-400 whitespace-nowrap">
+                    {formatCurrency(e.valor)}
+                  </p>
+                </div>
+              ))}
+              <div className="flex items-center justify-between gap-3 p-3 rounded-lg bg-muted/40">
+                <p className="text-sm font-semibold">Total de Despesas</p>
+                <p className="text-sm font-bold text-emerald-400 whitespace-nowrap">
+                  {formatCurrency(expenses.reduce((s, e) => s + e.valor, 0))}
+                </p>
+              </div>
+            </div>
+          </DetailSection>
+        )}
 
         <DetailSection title="Valor Total" icon={DollarSign}>
           {trip.valor_total ? (
@@ -835,9 +945,13 @@ export function TripDetailsPage() {
         }}>
           <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col p-0">
             <DialogHeader className="px-6 pt-6 pb-4 border-b border-border flex-shrink-0">
-              <DialogTitle className="font-display">Corrigir Viagem · {trip.protocolo}</DialogTitle>
+              <DialogTitle className="font-display">
+                {isCentral ? `Corrigir Viagem (Central) · ${trip.protocolo}` : `Corrigir Viagem · ${trip.protocolo}`}
+              </DialogTitle>
               <DialogDescription>
-                Edite os campos necessários e reenvie para a central aprovar.
+                {isCentral
+                  ? 'Edite os campos necessários. O status atual da viagem será mantido.'
+                  : 'Edite os campos necessários e reenvie para a central aprovar.'}
               </DialogDescription>
             </DialogHeader>
 
@@ -1021,7 +1135,7 @@ export function TripDetailsPage() {
               </div>
 
               {/* Fotos da Quilometragem */}
-              {trip.photos && trip.photos.length > 0 && (
+              {isMotorista && trip.photos && trip.photos.length > 0 && (
                 <div className="space-y-3">
                   <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Fotos da Quilometragem</p>
                   <div className="grid grid-cols-2 gap-4">
@@ -1078,23 +1192,36 @@ export function TripDetailsPage() {
               <Button variant="outline" onClick={() => setShowEditDialog(false)} disabled={saving || resubmitting}>
                 Cancelar
               </Button>
-              <Button
-                variant="ghost"
-                onClick={handleResubmit}
-                disabled={saving || resubmitting}
-                className="text-muted-foreground"
-              >
-                {resubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                Reenviar sem alterações
-              </Button>
-              <Button
-                onClick={handleSaveAndResubmit}
-                disabled={saving || resubmitting}
-                className="bg-orange-500 hover:bg-orange-600 text-white"
-              >
-                {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                Salvar e Reenviar
-              </Button>
+              {trip.status === 'correcao' && (
+                <Button
+                  variant="ghost"
+                  onClick={handleResubmit}
+                  disabled={saving || resubmitting}
+                  className="text-muted-foreground"
+                >
+                  {resubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                  Reenviar sem alterações
+                </Button>
+              )}
+              {isCentral ? (
+                <Button
+                  onClick={handleSaveCorrection}
+                  disabled={saving || resubmitting}
+                  className="bg-orange-500 hover:bg-orange-600 text-white"
+                >
+                  {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                  Salvar Correção
+                </Button>
+              ) : (
+                <Button
+                  onClick={handleSaveAndResubmit}
+                  disabled={saving || resubmitting}
+                  className="bg-orange-500 hover:bg-orange-600 text-white"
+                >
+                  {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                  Salvar e Reenviar
+                </Button>
+              )}
             </DialogFooter>
           </DialogContent>
         </Dialog>
@@ -1150,6 +1277,7 @@ const TIMELINE_ICONS: Record<string, React.ElementType> = {
   'Recusado': XCircle,
   'Correção solicitada': AlertTriangle,
   'Correção enviada': Send,
+  'Correção pela central': Pencil,
   'PDF gerado': FileCheck2,
   'PDF enviado por WhatsApp': MessageCircle,
 }
@@ -1160,6 +1288,7 @@ const TIMELINE_COLORS: Record<string, string> = {
   'Recusado': 'bg-red-500/15 text-red-400',
   'Correção solicitada': 'bg-orange-500/15 text-orange-400',
   'Correção enviada': 'bg-blue-500/15 text-blue-400',
+  'Correção pela central': 'bg-orange-500/15 text-orange-400',
   'PDF gerado': 'bg-purple-500/15 text-purple-400',
   'PDF enviado por WhatsApp': 'bg-emerald-500/15 text-emerald-400',
 }

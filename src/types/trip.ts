@@ -49,10 +49,21 @@ export interface Approval {
   approver_name?: string
 }
 
+export interface TripExpense {
+  id: string
+  trip_id: string
+  driver_id: string
+  tipo: string
+  valor: number
+  observacao?: string
+  created_at: string
+}
+
 export interface Trip {
   id: string
   driver_id: string
   protocolo: string
+  numero_sequencial?: number | null
   status: TripStatus
   data: string
   placa: string

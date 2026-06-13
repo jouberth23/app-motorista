@@ -20,11 +20,13 @@ import {
   WifiOff,
   RefreshCw,
   CloudOff,
+  Receipt,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { TripStepper } from '@/components/trips/TripStepper'
 import { PhotoCapture } from '@/components/trips/PhotoCapture'
 import type { PhotoCaptureResult } from '@/components/trips/PhotoCapture'
@@ -50,9 +52,24 @@ const STEPS = [
   { label: 'Justificativa', description: 'Motivo da viagem' },
   { label: 'Fotos', description: 'Registro obrigatório' },
   { label: 'Horários & KM', description: 'Tempos e quilometragem' },
+  { label: 'Despesas', description: 'Pedágio, estacionamento, etc.' },
   { label: 'Assinaturas', description: 'Assinatura digital' },
   { label: 'Revisão', description: 'Confirmar e enviar' },
 ]
+
+export const EXPENSE_TYPES = ['Pedágio', 'Estacionamento', 'Combustível', 'Outros'] as const
+
+function timeToMinutes(value: string): number {
+  const match = value.trim().match(/^(\d{1,2}):(\d{2})$/)
+  if (!match) return 0
+  return parseInt(match[1], 10) * 60 + parseInt(match[2], 10)
+}
+
+function formatMinutes(totalMinutes: number): string {
+  const h = Math.floor(totalMinutes / 60)
+  const m = totalMinutes % 60
+  return `${h}h ${m}min`
+}
 
 interface PhotoState {
   originalFile?: File
@@ -86,6 +103,7 @@ interface FormState {
   justificativa: string
   setor: string
   passengers: { nome: string; matricula: string }[]
+  expenses: { tipo: string; valor: string; observacao: string }[]
 }
 
 interface DraftState {
@@ -113,6 +131,7 @@ function buildInitialFormData(profile: { nome?: string | null; base?: string | n
     justificativa: '',
     setor: '',
     passengers: [{ nome: '', matricula: '' }],
+    expenses: [],
   }
 }
 
@@ -190,6 +209,14 @@ export function NewTripPage() {
     return null
   })()
 
+  const totalTempoMin = (() => {
+    if (!formData.hora_inicial || !formData.hora_final) return null
+    let diff = timeToMinutes(formData.hora_final) - timeToMinutes(formData.hora_inicial)
+    if (diff < 0) diff += 24 * 60
+    if (formData.hora_parada) diff -= timeToMinutes(formData.hora_parada)
+    return Math.max(diff, 0)
+  })()
+
   const updateField = (field: keyof FormState, value: unknown) => {
     setFormData((prev) => ({ ...prev, [field]: value }))
   }
@@ -218,6 +245,28 @@ export function NewTripPage() {
     }))
   }
 
+  const addExpense = () => {
+    setFormData((prev) => ({
+      ...prev,
+      expenses: [...prev.expenses, { tipo: '', valor: '', observacao: '' }],
+    }))
+  }
+
+  const removeExpense = (index: number) => {
+    setFormData((prev) => ({
+      ...prev,
+      expenses: prev.expenses.filter((_, i) => i !== index),
+    }))
+  }
+
+  const updateExpense = (index: number, field: 'tipo' | 'valor' | 'observacao', value: string) => {
+    setFormData((prev) => {
+      const expenses = [...prev.expenses]
+      expenses[index] = { ...expenses[index], [field]: value }
+      return { ...prev, expenses }
+    })
+  }
+
   const validateStep = (stepIndex: number): string | null => {
     switch (stepIndex) {
       case 0:
@@ -231,6 +280,8 @@ export function NewTripPage() {
         if (!formData.final_base.trim()) return 'Local final obrigatório'
         if (!formData.embarque_empregado.trim()) return 'Local de embarque obrigatório'
         if (!formData.desembarque_empregado.trim()) return 'Local de desembarque obrigatório'
+        if (!formData.km_inicial) return 'KM inicial obrigatório'
+        if (!formData.hora_inicial) return 'Hora inicial obrigatória'
         return null
       case 2:
         if (formData.passengers.some((p) => !p.nome.trim())) return 'Todos os passageiros devem ter nome'
@@ -247,14 +298,14 @@ export function NewTripPage() {
         if (!photoKmFinal.previewUrl && !photoKmFinal.originalFile) return 'Foto da quilometragem final é obrigatória'
         return null
       case 6:
-        if (!formData.hora_inicial) return 'Hora inicial obrigatória'
         if (!formData.hora_final) return 'Hora final obrigatória'
-        if (!formData.km_inicial) return 'KM inicial obrigatório'
         if (!formData.km_final) return 'KM final obrigatório'
         if (parseFloat(formData.km_final) < parseFloat(formData.km_inicial))
           return 'KM final não pode ser menor que KM inicial'
         return null
       case 7:
+        return null
+      case 8:
         if (!sigPassageiro.dataUrl) return 'Assinatura do passageiro é obrigatória'
         if (!sigMotorista.dataUrl) return 'Assinatura do motorista é obrigatória'
         return null
@@ -319,7 +370,7 @@ export function NewTripPage() {
 
   const handleSubmit = async (isDraft: boolean) => {
     if (!isDraft) {
-      const error = validateStep(7)
+      const error = validateStep(8)
       if (error) {
         toast.error(error)
         return
@@ -518,14 +569,6 @@ export function NewTripPage() {
 
             <div className="grid gap-4 sm:grid-cols-3">
               <div className="space-y-1.5">
-                <Label>Hora Inicial *</Label>
-                <Input
-                  type="time"
-                  value={formData.hora_inicial}
-                  onChange={(e) => updateField('hora_inicial', e.target.value)}
-                />
-              </div>
-              <div className="space-y-1.5">
                 <Label>Hora Final *</Label>
                 <Input
                   type="time"
@@ -541,19 +584,19 @@ export function NewTripPage() {
                   placeholder="Ex: 00:30"
                 />
               </div>
+              <div className="space-y-1.5">
+                <Label>Total Tempo</Label>
+                <div className="h-11 flex items-center px-3 rounded-xl border border-border bg-secondary/50 text-sm font-semibold">
+                  {totalTempoMin !== null ? (
+                    <span className="text-primary">{formatMinutes(totalTempoMin)}</span>
+                  ) : (
+                    <span className="text-muted-foreground">Auto calculado</span>
+                  )}
+                </div>
+              </div>
             </div>
 
-            <div className="grid gap-4 sm:grid-cols-3">
-              <div className="space-y-1.5">
-                <Label>KM Inicial *</Label>
-                <Input
-                  type="number"
-                  value={formData.km_inicial}
-                  onChange={(e) => updateField('km_inicial', e.target.value)}
-                  placeholder="0"
-                  min="0"
-                />
-              </div>
+            <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-1.5">
                 <Label>KM Final *</Label>
                 <Input
@@ -633,6 +676,24 @@ export function NewTripPage() {
                   value={formData.desembarque_empregado}
                   onChange={(e) => updateField('desembarque_empregado', e.target.value)}
                   placeholder="Local de desembarque"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>KM Inicial *</Label>
+                <Input
+                  type="number"
+                  value={formData.km_inicial}
+                  onChange={(e) => updateField('km_inicial', e.target.value)}
+                  placeholder="0"
+                  min="0"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Hora Inicial *</Label>
+                <Input
+                  type="time"
+                  value={formData.hora_inicial}
+                  onChange={(e) => updateField('hora_inicial', e.target.value)}
                 />
               </div>
             </div>
@@ -837,6 +898,76 @@ export function NewTripPage() {
 
       case 7:
         return (
+          <div className="space-y-5">
+            <div className="flex items-center gap-3 mb-2">
+              <div className="p-2 rounded-xl bg-primary/15 border border-primary/20">
+                <Receipt className="h-5 w-5 text-primary" />
+              </div>
+              <div>
+                <h3 className="font-display font-semibold">Despesas</h3>
+                <p className="text-xs text-muted-foreground">
+                  Pedágio, estacionamento, combustível etc. (opcional)
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              {formData.expenses.map((exp, i) => (
+                <div key={i} className="flex gap-3 items-start p-4 rounded-xl border border-border bg-muted/20">
+                  <div className="flex-1 grid gap-3 sm:grid-cols-3">
+                    <div className="space-y-1">
+                      <Label className="text-xs">Tipo</Label>
+                      <Select value={exp.tipo} onValueChange={(value) => updateExpense(i, 'tipo', value)}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Selecione" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {EXPENSE_TYPES.map((type) => (
+                            <SelectItem key={type} value={type}>{type}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">Valor (R$)</Label>
+                      <Input
+                        type="number"
+                        value={exp.valor}
+                        onChange={(e) => updateExpense(i, 'valor', e.target.value)}
+                        placeholder="0,00"
+                        min="0"
+                        step="0.01"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">Observação</Label>
+                      <Input
+                        value={exp.observacao}
+                        onChange={(e) => updateExpense(i, 'observacao', e.target.value)}
+                        placeholder="Opcional"
+                      />
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => removeExpense(i)}
+                    className="mt-6 p-1.5 rounded-lg text-destructive/60 hover:text-destructive hover:bg-destructive/10 transition-colors"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
+              ))}
+            </div>
+
+            <Button type="button" variant="outline" size="sm" onClick={addExpense}>
+              <Plus className="h-4 w-4" />
+              Adicionar Despesa
+            </Button>
+          </div>
+        )
+
+      case 8:
+        return (
           <div className="space-y-6">
             <div className="flex items-center gap-3 mb-2">
               <div className="p-2 rounded-xl bg-primary/15 border border-primary/20">
@@ -857,7 +988,7 @@ export function NewTripPage() {
               defaultMatricula={formData.passengers[0]?.matricula ?? ''}
               onSave={(result) => setSigPassageiro(result)}
               savedResult={sigPassageiro}
-              error={stepErrors[7] && !sigPassageiro.dataUrl ? 'Assinatura do passageiro é obrigatória' : undefined}
+              error={stepErrors[8] && !sigPassageiro.dataUrl ? 'Assinatura do passageiro é obrigatória' : undefined}
             />
 
             <div className="border-t border-border pt-6">
@@ -868,7 +999,7 @@ export function NewTripPage() {
                 onSave={(result) => setSigMotorista(result)}
                 savedResult={sigMotorista}
                 error={
-                  stepErrors[7] && !sigMotorista.dataUrl && sigPassageiro.dataUrl
+                  stepErrors[8] && !sigMotorista.dataUrl && sigPassageiro.dataUrl
                     ? 'Assinatura do motorista é obrigatória'
                     : undefined
                 }
@@ -877,7 +1008,7 @@ export function NewTripPage() {
           </div>
         )
 
-      case 8:
+      case 9:
         return (
           <div className="space-y-5">
             <div className="flex items-center gap-3 mb-2">
@@ -951,6 +1082,25 @@ export function NewTripPage() {
                 <ReviewRow label="KM Inicial" value={formData.km_inicial} />
                 <ReviewRow label="KM Final" value={formData.km_final} />
                 <ReviewRow label="Total KM" value={totalKm ? `${totalKm} km` : '-'} highlight />
+                {totalTempoMin !== null && (
+                  <ReviewRow label="Total Tempo" value={formatMinutes(totalTempoMin)} highlight />
+                )}
+              </ReviewSection>
+
+              <ReviewSection title="Despesas">
+                {formData.expenses.filter((e) => e.tipo && parseFloat(e.valor) > 0).length > 0 ? (
+                  formData.expenses
+                    .filter((e) => e.tipo && parseFloat(e.valor) > 0)
+                    .map((e, i) => (
+                      <ReviewRow
+                        key={i}
+                        label={e.tipo + (e.observacao ? ` (${e.observacao})` : '')}
+                        value={`R$ ${parseFloat(e.valor).toFixed(2)}`}
+                      />
+                    ))
+                ) : (
+                  <p className="text-sm text-muted-foreground">Nenhuma despesa registrada</p>
+                )}
               </ReviewSection>
 
               {/* Signatures preview */}

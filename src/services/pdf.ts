@@ -546,7 +546,7 @@ async function buildPDFDoc(
     doc.setFont('helvetica', 'normal')
     doc.setFontSize(5.5)
     doc.text(
-      'Documento gerado e assinado digitalmente pelo sistema Transmundim Voucher · Registro de data, hora, GPS e protocolo único.',
+      'Documento gerado e assinado digitalmente pelo sistema Transmundim Logística · Registro de data, hora, GPS e protocolo único.',
       PAGE_W / 2, FOOTER_Y + 3, { align: 'center' },
     )
 

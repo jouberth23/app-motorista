@@ -32,7 +32,7 @@ import { useTrips } from '@/hooks/useTrips'
 import { useTripSync } from '@/hooks/useTripSync'
 import { useAuthContext } from '@/contexts/AuthContext'
 import { useRole } from '@/hooks/useRole'
-import { formatDate, formatTime } from '@/lib/utils'
+import { formatDate, formatTime, formatVoucherLabel } from '@/lib/utils'
 import type { Trip } from '@/types/trip'
 import type { TripStatus } from '@/types/enums'
 import { TRIP_TYPE_LABELS } from '@/lib/constants'
@@ -55,7 +55,7 @@ function TripCard({ trip }: { trip: Trip }) {
             </div>
             <div className="min-w-0">
               <div className="font-display font-semibold text-sm text-foreground">
-                {trip.protocolo}
+                {formatVoucherLabel(trip)}
               </div>
               <div className="text-xs text-muted-foreground">
                 {trip.placa} · {TRIP_TYPE_LABELS[trip.tipo_viagem]}

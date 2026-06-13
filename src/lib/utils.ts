@@ -35,6 +35,12 @@ export function formatTime(timeStr: string): string {
   return timeStr.substring(0, 5)
 }
 
+export function formatVoucherLabel(trip: { numero_sequencial?: number | null; protocolo: string }): string {
+  return trip.numero_sequencial != null
+    ? `Voucher #${trip.numero_sequencial} — ${trip.protocolo}`
+    : trip.protocolo
+}
+
 export function generateProtocol(): string {
   const now = new Date()
   const y = now.getFullYear()

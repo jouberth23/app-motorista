@@ -72,7 +72,7 @@
 
   <!-- Main title -->
   <text x="230" y="280" font-family="'Segoe UI', system-ui, sans-serif"
-        font-size="54" font-weight="700" fill="white" letter-spacing="-1">Transmundim Voucher</text>
+        font-size="48" font-weight="700" fill="white" letter-spacing="-1">Transmundim Logística</text>
 
   <!-- Tagline -->
   <text x="232" y="338" font-family="'Segoe UI', system-ui, sans-serif"

@@ -85,7 +85,7 @@ export function AdminDashboardPage() {
     <div className="space-y-6">
       <PageHeader
         title="Dashboard Admin"
-        description="Visão geral do sistema Transmundim Voucher"
+        description="Visão geral do sistema Transmundim Logística"
       />
 
       {/* Stats grid */}

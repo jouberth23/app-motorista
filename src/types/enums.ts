@@ -25,9 +25,10 @@ export const SETORES = [
   'Sala de Monitoramento',
   'Operação de Usina',
   'Manutenção',
-  'ECI',
+  'ECJ',
   'Relações com Comunidade',
   'Comunicação',
+  'Outros',
 ] as const
 
 export type Setor = (typeof SETORES)[number]

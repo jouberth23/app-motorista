@@ -36,7 +36,7 @@ function isValidBrazilPhone(digits: string): boolean {
 
 function buildCaption(trip: TripRow, driverName: string | null, extra?: string): string {
   const base =
-    `📋 *Transmundim Voucher* — Relatório de Viagem\n\n` +
+    `📋 *Transmundim Logística* — Relatório de Viagem\n\n` +
     `Protocolo: *${trip.protocolo}*\n` +
     `Motorista: ${driverName ?? '-'}\n` +
     `Placa: ${trip.placa}\n\n` +
