@@ -180,7 +180,7 @@ export function ReportsPage() {
     const pad = (n: number) => String(n).padStart(2, '0')
     const startStr = `${anchorYear}-${pad(anchorMonth + 1)}-${pad(block.start)}`
     const endStr = `${anchorYear}-${pad(anchorMonth + 1)}-${pad(block.end)}`
-    const inRange = trips.filter((t) => t.data >= startStr && t.data <= endStr)
+    const inRange = trips.filter((t) => t.data >= startStr && t.data <= endStr && t.status === 'aprovado')
     const total = inRange.reduce((sum, t) => sum + (t.valor_total || 0), 0)
     return {
       label: periodType === 'mensal'
