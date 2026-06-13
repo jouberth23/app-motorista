@@ -17,6 +17,7 @@ interface Recipient { phone: string; name: string; kind: string }
 interface TripRow {
   id: string; protocolo: string; pdf_path: string | null
   driver_id: string; placa: string; data: string
+  numero_sequencial: number | null
 }
 
 // Always 200 so supabase.functions.invoke never wraps the body in FunctionsHttpError
@@ -37,6 +38,7 @@ function isValidBrazilPhone(digits: string): boolean {
 function buildCaption(trip: TripRow, driverName: string | null, extra?: string): string {
   const base =
     `📋 *Transmundim Logística* — Relatório de Viagem\n\n` +
+    `Voucher: *#${trip.numero_sequencial ?? '—'}*\n` +
     `Protocolo: *${trip.protocolo}*\n` +
     `Motorista: ${driverName ?? '-'}\n` +
     `Placa: ${trip.placa}\n\n` +
@@ -111,7 +113,7 @@ serve(async (req) => {
     // driver_name is not a column in trips — select only real columns
     const { data: trip, error: tripErr } = await supabase
       .from('trips')
-      .select('id, protocolo, pdf_path, driver_id, placa, data')
+      .select('id, protocolo, pdf_path, driver_id, placa, data, numero_sequencial')
       .eq('id', trip_id)
       .single<TripRow>()
 

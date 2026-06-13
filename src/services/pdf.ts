@@ -1,7 +1,7 @@
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import type { Trip } from '@/types/trip'
-import { formatDate, formatTime, formatCurrency, formatDateTime } from '@/lib/utils'
+import { formatDate, formatTime, formatCurrency, formatDateTime, formatVoucherLabel } from '@/lib/utils'
 import { TRIP_TYPE_LABELS, COMPANY_NAME, APP_NAME } from '@/lib/constants'
 import { supabase } from '@/lib/supabase'
 
@@ -84,7 +84,7 @@ async function buildPDFDoc(
     doc.setFont('helvetica', 'normal')
     doc.setTextColor(...C.BLUE_MUTED)
     doc.setFontSize(7)
-    doc.text(`Protocolo: ${trip.protocolo}  ·  ${subtitle}`, PAGE_W - MARGIN, 10, { align: 'right' })
+    doc.text(`${formatVoucherLabel(trip)}  ·  ${subtitle}`, PAGE_W - MARGIN, 10, { align: 'right' })
     doc.setFillColor(...C.WHITE)
     doc.rect(0, 14, PAGE_W, PAGE_H - 14, 'F')
     y = 20
@@ -196,7 +196,7 @@ async function buildPDFDoc(
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(7)
   doc.setTextColor(...C.BLUE_MUTED)
-  doc.text(`Protocolo: ${trip.protocolo}`,                       PAGE_W - MARGIN, HEADER_H / 2 + 2,  { align: 'right' })
+  doc.text(formatVoucherLabel(trip),                              PAGE_W - MARGIN, HEADER_H / 2 + 2,  { align: 'right' })
   doc.text(`Emissão: ${formatDateTime(new Date().toISOString())}`, PAGE_W - MARGIN, HEADER_H / 2 + 9,  { align: 'right' })
 
   // White background for content

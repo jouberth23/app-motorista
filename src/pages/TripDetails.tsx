@@ -235,6 +235,17 @@ export function TripDetailsPage() {
 
       if (error) throw error
       const t = data as Trip
+
+      // driver_name não é uma coluna em trips — busca o nome do motorista em profiles
+      if (t.driver_id) {
+        const { data: driverProfile } = await supabase
+          .from('profiles')
+          .select('nome')
+          .eq('id', t.driver_id)
+          .single()
+        t.driver_name = driverProfile?.nome ?? undefined
+      }
+
       setTrip(t)
       setValorTotal(t.valor_total?.toString() ?? '')
 

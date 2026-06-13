@@ -10,7 +10,7 @@ import {
   MessageCircle, Send, Loader2, CheckCircle2, XCircle, Phone,
   User, Clock, AlertTriangle,
 } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import { cn, formatVoucherLabel } from '@/lib/utils'
 import { normalizePhone, isValidPhone, formatPhoneDisplay, maskPhone } from '@/lib/phone'
 import { supabase } from '@/lib/supabase'
 import { toast } from 'sonner'
@@ -161,7 +161,7 @@ export function SendWhatsappDialog({ open, onOpenChange, trip }: SendWhatsappDia
             Enviar PDF por WhatsApp
           </DialogTitle>
           <DialogDescription>
-            Viagem {trip.protocolo} · PDF será enviado ao destinatário
+            {formatVoucherLabel(trip)} · PDF será enviado ao destinatário
           </DialogDescription>
         </DialogHeader>
 
@@ -183,7 +183,7 @@ export function SendWhatsappDialog({ open, onOpenChange, trip }: SendWhatsappDia
               <div className="space-y-1 text-sm text-foreground">
                 <p>
                   <span className="text-muted-foreground">Viagem:</span>{' '}
-                  <span className="font-medium">{trip.protocolo}</span>
+                  <span className="font-medium">{formatVoucherLabel(trip)}</span>
                 </p>
                 <p>
                   <span className="text-muted-foreground">Para:</span>{' '}

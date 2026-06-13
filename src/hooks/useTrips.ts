@@ -24,6 +24,22 @@ function readTripsCache(driverId: string): Trip[] | null {
   }
 }
 
+// driver_name não é uma coluna em trips — busca os nomes em profiles via driver_id
+async function attachDriverNames(trips: Trip[]) {
+  const driverIds = [...new Set(trips.map((t) => t.driver_id).filter(Boolean))]
+  if (driverIds.length === 0) return
+
+  const { data } = await supabase
+    .from('profiles')
+    .select('id, nome')
+    .in('id', driverIds)
+
+  const nameById = new Map((data ?? []).map((p) => [p.id, p.nome as string]))
+  for (const trip of trips) {
+    trip.driver_name = nameById.get(trip.driver_id) ?? undefined
+  }
+}
+
 export function useTrips(driverId?: string, options?: { enabled?: boolean }) {
   const enabled = options?.enabled ?? true
   const [trips, setTrips] = useState<Trip[]>([])
@@ -52,6 +68,7 @@ export function useTrips(driverId?: string, options?: { enabled?: boolean }) {
       const { data, error: fetchError } = await query
       if (fetchError) throw fetchError
       const result = (data as Trip[]) ?? []
+      await attachDriverNames(result)
       setTrips(result)
       setError(false)
       setFromCache(false)
